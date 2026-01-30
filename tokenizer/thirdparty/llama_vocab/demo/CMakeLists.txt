@@ -1,0 +1,5 @@
+set(TARGET llama-tokenize)
+add_executable(${TARGET} tokenize.cpp)
+target_link_libraries(${TARGET} PRIVATE llama_vocab)
+target_compile_features(${TARGET} PRIVATE cxx_std_11)
+INSTALL(TARGETS llama-tokenize DESTINATION demo)

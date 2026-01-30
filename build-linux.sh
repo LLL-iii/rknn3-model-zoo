@@ -1,0 +1,213 @@
+#!/bin/bash
+
+set -e
+
+echo "$0 $@"
+while getopts ":t:a:d:b:m:r:j" opt; do
+  case $opt in
+    t)
+      TARGET_SOC=$OPTARG
+      ;;
+    a)
+      TARGET_ARCH=$OPTARG
+      ;;
+    b)
+      BUILD_TYPE=$OPTARG
+      ;;
+    m)
+      ENABLE_ASAN=ON
+      export ENABLE_ASAN=TRUE
+      ;;
+    d)
+      BUILD_DEMO_NAME=$OPTARG
+      ;;
+    r)
+      DISABLE_RGA=ON
+      ;;
+    j)
+      DISABLE_LIBJPEG=ON
+      ;;
+    :)
+      echo "Option -$OPTARG requires an argument." 
+      exit 1
+      ;;
+    ?)
+      echo "Invalid option: -$OPTARG index:$OPTIND"
+      ;;
+  esac
+done
+
+if [ -z ${TARGET_SOC} ] || [ -z ${BUILD_DEMO_NAME} ]; then
+  echo "$0 -t <target> -a <arch> -d <build_demo_name> [-b <build_type>] [-m] [-r] [-j]"
+  echo ""
+  echo "    -t : target (rk3588/rk3576/x86)"
+  echo "    -a : arch (aarch64/armhf/x86_64)"
+  echo "    -d : demo name"
+  echo "    -b : build_type(Debug/Release)"
+  echo "    -m : enable address sanitizer, build_type need set to Debug"
+  echo "    -r : disable rga, use cpu resize image"
+  echo "    -j : disable libjpeg to avoid conflicts between libjpeg and opencv"
+  echo "such as: $0 -t rk3588 -a aarch64 -d Qwen2_5_VL"
+  echo "Note: 'if you want to use opencv to read or save jpg files, use the '-j' option to disable libjpeg"
+  echo ""
+  exit -1
+fi
+
+# 设置编译器
+HOST_ARCH=$(uname -m)
+if [ "${HOST_ARCH}" = "${TARGET_ARCH}" ]; then
+    # 架构相同，使用系统默认编译器
+    export CC=gcc
+    export CXX=g++
+else
+    # 架构不同，使用交叉编译器
+    echo "$GCC_COMPILER"
+    export CC=${GCC_COMPILER}-gcc
+    export CXX=${GCC_COMPILER}-g++
+
+    if command -v ${CC} >/dev/null 2>&1; then
+        :
+    else
+        echo "${CC} is not available"
+        echo "Please set GCC_COMPILER for $TARGET_SOC"
+        echo "such as export GCC_COMPILER=~/opt/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu"
+        exit
+    fi
+fi
+
+# Debug / Release
+if [[ -z ${BUILD_TYPE} ]];then
+    BUILD_TYPE=Release
+fi
+
+# Build with Address Sanitizer for memory check, BUILD_TYPE need set to Debug
+if [[ -z ${ENABLE_ASAN} ]];then
+    ENABLE_ASAN=OFF
+fi
+
+if [[ -z ${DISABLE_RGA} ]];then
+    DISABLE_RGA=OFF
+fi
+
+if [[ -z ${DISABLE_LIBJPEG} ]];then
+    DISABLE_LIBJPEG=OFF
+fi
+
+for demo_path in `find examples tested_models -name ${BUILD_DEMO_NAME}`
+do
+    if [ -d "$demo_path/cpp" ]
+    then
+        BUILD_DEMO_PATH="$demo_path/cpp"
+        break;
+    fi
+done
+
+if [[ -z "${BUILD_DEMO_PATH}" ]]
+then
+    echo "Cannot find demo: ${BUILD_DEMO_NAME}, only support:"
+
+    for demo_path in `find examples tested_models -name cpp`
+    do
+        if [ -d "$demo_path" ]
+        then
+            dname=`dirname "$demo_path"`
+            name=`basename $dname`
+            echo "$name"
+        fi
+    done
+    exit
+fi
+
+case ${TARGET_SOC} in
+    rk3588)
+        ;;
+    rk3576)
+        ;;
+    x86)
+        ;;
+    *)
+        echo "Invalid target: ${TARGET_SOC}"
+        echo "Valid target: rk3588,rk3576,x86"
+        exit -1
+        ;;
+esac
+
+TARGET_SDK="rknn_${BUILD_DEMO_NAME}_demo"
+
+TARGET_PLATFORM=${TARGET_SOC}_linux
+if [[ -n ${TARGET_ARCH} ]];then
+    TARGET_PLATFORM=${TARGET_PLATFORM}_${TARGET_ARCH}
+fi
+
+# 对于x86平台，简化平台名称
+if [ "${TARGET_SOC}" = "x86" ]; then
+    TARGET_PLATFORM="x86_64"
+    DISABLE_RGA=ON
+fi
+
+ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
+INSTALL_DIR=${ROOT_PWD}/install/${TARGET_PLATFORM}/${TARGET_SDK}
+BUILD_DIR=${ROOT_PWD}/build/build_${TARGET_SDK}_${TARGET_PLATFORM}_${BUILD_TYPE}
+
+echo "==================================="
+echo "BUILD_DEMO_NAME=${BUILD_DEMO_NAME}"
+echo "BUILD_DEMO_PATH=${BUILD_DEMO_PATH}"
+echo "TARGET_SOC=${TARGET_SOC}"
+echo "TARGET_ARCH=${TARGET_ARCH}"
+echo "BUILD_TYPE=${BUILD_TYPE}"
+echo "ENABLE_ASAN=${ENABLE_ASAN}"
+echo "DISABLE_RGA=${DISABLE_RGA}"
+echo "DISABLE_LIBJPEG=${DISABLE_LIBJPEG}"
+echo "INSTALL_DIR=${INSTALL_DIR}"
+echo "BUILD_DIR=${BUILD_DIR}"
+echo "CC=${CC}"
+echo "CXX=${CXX}"
+echo "==================================="
+
+if [[ ! -d "${BUILD_DIR}" ]]; then
+  mkdir -p ${BUILD_DIR}
+fi
+
+if [[ -d "${INSTALL_DIR}" ]]; then
+  rm -rf ${INSTALL_DIR}
+fi
+
+cd ${BUILD_DIR}
+
+# 对于x86平台，可能需要不同的CMake配置
+if [ "${TARGET_SOC}" = "x86" ]; then
+    cmake ../../${BUILD_DEMO_PATH} \
+        -DTARGET_SOC=${TARGET_SOC} \
+        -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+        -DENABLE_ASAN=${ENABLE_ASAN} \
+        -DDISABLE_RGA=${DISABLE_RGA} \
+        -DDISABLE_LIBJPEG=${DISABLE_LIBJPEG} \
+        -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
+else
+    cmake ../../${BUILD_DEMO_PATH} \
+        -DTARGET_SOC=${TARGET_SOC} \
+        -DCMAKE_SYSTEM_NAME=Linux \
+        -DCMAKE_SYSTEM_PROCESSOR=${TARGET_ARCH} \
+        -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+        -DENABLE_ASAN=${ENABLE_ASAN} \
+        -DDISABLE_RGA=${DISABLE_RGA} \
+        -DDISABLE_LIBJPEG=${DISABLE_LIBJPEG} \
+        -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
+fi
+
+make -j4
+make install
+
+# Check if there is a rknn model in the install directory
+suffix=".rknn"
+shopt -s nullglob
+if [ -d "$INSTALL_DIR" ]; then
+    files=("$INSTALL_DIR/model/"/*"$suffix")
+    shopt -u nullglob
+
+    if [ ${#files[@]} -le 0 ]; then
+        echo -e "\e[91mThe RKNN model can not be found in \"$INSTALL_DIR/model\", please check!\e[0m"
+    fi
+else
+    echo -e "\e[91mInstall directory \"$INSTALL_DIR\" does not exist, please check!\e[0m"
+fi

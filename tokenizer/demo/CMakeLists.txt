@@ -1,0 +1,5 @@
+set(TARGET tokenize_demo)
+add_executable(${TARGET} tokenize_demo.cpp)
+target_link_libraries(${TARGET} PRIVATE tokenizer)
+target_compile_features(${TARGET} PRIVATE cxx_std_11)
+INSTALL(TARGETS tokenize_demo DESTINATION demo)
