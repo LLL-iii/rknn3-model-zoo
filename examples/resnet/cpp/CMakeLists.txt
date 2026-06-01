@@ -30,8 +30,23 @@ target_link_libraries(${PROJECT_NAME}
     dl
 )
 
+add_executable(dataset_eval
+    dataset_eval.cc
+    ${resnet_file}
+)
+
+target_link_libraries(dataset_eval
+    imageutils
+    fileutils
+    ${LIBRKNNAPI}
+    dl
+)
+
 if (CMAKE_SYSTEM_NAME STREQUAL "Android")
     target_link_libraries(${PROJECT_NAME}
+    log
+)
+    target_link_libraries(dataset_eval
     log
 )
 endif()
@@ -41,6 +56,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
     set(THREADS_PREFER_PTHREAD_FLAG ON)
     find_package(Threads REQUIRED)
     target_link_libraries(${PROJECT_NAME} Threads::Threads)
+    target_link_libraries(dataset_eval Threads::Threads)
 endif()
 
 target_include_directories(${PROJECT_NAME} PRIVATE
@@ -48,7 +64,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${LIBRKNNAPI_INCLUDES}
 )
 
-install(TARGETS ${PROJECT_NAME} DESTINATION .)
+target_include_directories(dataset_eval PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${LIBRKNNAPI_INCLUDES}
+)
+
+install(TARGETS ${PROJECT_NAME} dataset_eval DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../model/dog_224x224.jpg DESTINATION model)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../model/synset.txt DESTINATION model)
 file(GLOB RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*.rknn")

@@ -22,7 +22,7 @@ if __name__ == '__main__':
 
     # pre-process config
     print('--> config model')
-    rknn.config(target_platform='rk1820', 
+    rknn.config(target_platform=args.platform, 
                 quantized_dtype='w4a16', quantized_algorithm='grq', quantized_method='group32',
                 )
     print('done')
@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     # Build model
     print('--> Building model')
-    rknn.build(do_quantization=True, dataset=args.dataset_path)
+    ret = rknn.build(do_quantization=True, dataset=args.dataset_path)
     if ret != 0:
         print('Build model failed!')
         exit(ret)

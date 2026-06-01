@@ -41,6 +41,9 @@ int main(int argc, char** argv)
     const char* image_path  = argv[3];
     uint32_t    core_mask   = strtoul(argv[4], nullptr, 16);
 
+    int topk = 5;
+    mobilenet_result result[topk];
+
     int line_count;
     char** lines = read_lines_from_file(IMAGENET_CLASSES_FILE, &line_count);
     if (lines == NULL) {
@@ -63,11 +66,8 @@ int main(int argc, char** argv)
     ret = read_image(image_path, &src_image);
     if (ret != 0) {
         printf("read image fail! ret=%d image_path=%s\n", ret, image_path);
-        return -1;
+        goto out;
     }
-
-    int topk = 5;
-    mobilenet_result result[topk];
 
     ret = inference_mobilenet_model(&rknn_app_ctx, &src_image, result, topk);
     if (ret != 0) {

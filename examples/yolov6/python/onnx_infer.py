@@ -115,10 +115,10 @@ def box_process(position):
 
 def post_process(input_data):
     boxes, scores, classes_conf = [], [], []
-    defualt_branch=3
-    pair_per_branch = len(input_data)//defualt_branch
+    default_branch=3
+    pair_per_branch = len(input_data)//default_branch
     # Python 忽略 score_sum 输出
-    for i in range(defualt_branch):
+    for i in range(default_branch):
         boxes.append(box_process(input_data[pair_per_branch*i]))
         classes_conf.append(input_data[pair_per_branch*i+1])
         scores.append(np.ones_like(input_data[pair_per_branch*i+1][:,:1,:,:], dtype=np.float32))

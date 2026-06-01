@@ -37,14 +37,21 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             from rknn.utils.grq import grq_quantize
             grq_model_path = os.path.dirname(args.export_llm_path)+'/grq'
-            if grq_quantize(args.model_path, '../../../datasets/CMMLU/dataset.json', grq_model_path, group=32) == True:
-                args.model_path = grq_model_path
+            if grq_quantize(args.model_path, '../data/dataset.json', grq_model_path, group=32) == True:
                 print("GRQ quantization success!")
+                import shutil
+                src = args.model_path + "/tokenizer_config.json"
+                dst = grq_model_path + "/tokenizer_config.json"
+                shutil.copy2(src, dst)
             else:
                 print("GRQ quantization failed!")
                 exit(1)
         else:
-            print("cuda is unavailable, ignore the '--quant' parameter!")
+            grq_model_path = None
+            print("cuda must be available")
+    else:
+        grq_model_path = None
+
 
     kwargs = {
         'trust_remote_code': True,
@@ -55,7 +62,7 @@ if __name__ == '__main__':
         kwargs['config'] = config
         model = AutoModelForCausalLM.from_pretrained(args.model_path, **kwargs)
         if args.quan_dataset and not args.quant:
-            gen_quantize_dataset(args.model_path, model.model.embed_tokens, '../../../datasets/CMMLU/dataset.json', '../../../datasets/CMMLU/dataset.txt', '../../../datasets/CMMLU/dataset_np')
+            gen_quantize_dataset(args.model_path, model.model.embed_tokens, '../data/dataset.json', '../data/dataset.txt', '../data/dataset_np')
     else:
         model = AutoModelForCausalLM.from_config(config, **kwargs)
 
@@ -70,7 +77,7 @@ if __name__ == '__main__':
     causal_llm_to_onnx(model, args)
 
     # Export LLM configuration 
-    export_llm_config(args.model_path, os.path.splitext(args.export_llm_path)[0] + '.config.pkl', chat_context, prompt)
+    export_llm_config(args.model_path if grq_model_path is None else grq_model_path, os.path.splitext(args.export_llm_path)[0] + '.config.pkl', chat_context, prompt)
 
     # Export tokenizer
     export_tokenizer(args.model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer.gguf')

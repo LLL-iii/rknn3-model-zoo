@@ -34,11 +34,11 @@ while getopts "s:a:b:mn:" opt; do
   esac
 done
 
-if [ x"${TARGET_SYSTEM}" != x"linux" ]  &&  [ x"${TARGET_SYSTEM}" != x"android" ]  &&  [ x"${TARGET_SYSTEM}" != x"riscv64" ]; then
+if [ x"${TARGET_SYSTEM}" != x"linux" ]  &&  [ x"${TARGET_SYSTEM}" != x"android" ]  &&  [ x"${TARGET_SYSTEM}" != x"riscv64" ]  &&  [ x"${TARGET_SYSTEM}" != x"cygwin" ]; then
   echo "$0 -s <system> -a <arch> -n <sdk> -b <build_type>"
   echo "Please select config:"
   echo ""
-  echo "    -s : system (linux/android/riscv64)"
+  echo "    -s : system (linux/android/riscv64/cygwin)"
   echo "    -a : arch (linux: aarch64/armhf/x86; android: arm64-v8a/armeabi-v7a)"
   echo "    -n : sdk name(hello)"
   echo "    -b : build_type(Debug/Release/RelWithDebInfo)"
@@ -72,6 +72,10 @@ if [ "${TARGET_SYSTEM}" == "riscv64" ]; then
     source env_riscv64.sh
 fi
 
+if [ "${TARGET_SYSTEM}" == "cygwin" ]; then
+    source env_cygwin.sh
+fi
+
 TARGET_PLATFORM=${TARGET_SYSTEM}
 if [[ -n ${TARGET_ARCH} ]];then
   TARGET_PLATFORM=${TARGET_PLATFORM}_${TARGET_ARCH}
@@ -80,6 +84,19 @@ fi
 ROOT_PWD=$( cd "$( dirname $0 )" && cd -P "$( dirname "$SOURCE" )" && pwd )
 INSTALL_DIR=${ROOT_PWD}/install/${TARGET_SDK}_${TARGET_PLATFORM}
 BUILD_DIR=${ROOT_PWD}/build/build_${TARGET_SDK}_${TARGET_PLATFORM}_${BUILD_TYPE}
+
+if [ "${TARGET_SYSTEM}" == "linux" ]; then
+  if [ "${TARGET_ARCH}" == "aarch64" ]; then
+    C_COMPILER=${C_COMPILER_AARCH64}
+    CXX_COMPILER=${CXX_COMPILER_AARCH64}
+  elif [ "${TARGET_ARCH}" == "armhf" ]; then
+    C_COMPILER=${C_COMPILER_ARM32}
+    CXX_COMPILER=${CXX_COMPILER_ARM32}
+  elif [ "${TARGET_ARCH}" == "x86" ]; then
+    C_COMPILER=${C_COMPILER_X86_64}
+    CXX_COMPILER=${CXX_COMPILER_X86_64}
+  fi
+fi
 
 echo "==================================="
 echo "TARGET_ARCH=${TARGET_ARCH}"
@@ -127,6 +144,15 @@ elif [ "${TARGET_SYSTEM}" == "riscv64" ]; then
   cmake ../.. \
       -DCMAKE_SYSTEM_NAME=Generic \
       -DCMAKE_SYSTEM_PROCESSOR=riscv64 \
+      -DCMAKE_C_COMPILER=${C_COMPILER} \
+      -DCMAKE_CXX_COMPILER=${CXX_COMPILER} \
+      -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DENABLE_ASAN=${ENABLE_ASAN} \
+      -DCMAKE_INSTALL_PREFIX=${INSTALL_DIR}
+elif [ "${TARGET_SYSTEM}" == "cygwin" ]; then
+  cmake ../.. \
+      -DCMAKE_SYSTEM_NAME=CYGWIN \
       -DCMAKE_C_COMPILER=${C_COMPILER} \
       -DCMAKE_CXX_COMPILER=${CXX_COMPILER} \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \

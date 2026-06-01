@@ -78,6 +78,24 @@ python export_rknn.py \
 
 The C++ inference code automatically detects the model format and is compatible with both pruned and full models without code modification.
 
+The C++ demo remains compatible with the original command line. To enable SpeedUP,
+append the optional `speedup_ratio` argument:
+
+```bash
+./rknn_qwen3_vl_demo \
+    <vision_model_path> <vision_weight_path> \
+    <llm_model_path> <llm_weight_path> \
+    <tokenizer_path> <embedding_path> \
+    <vision_core_mask> <llm_core_mask> \
+    <image_path> <prompt> \
+    [model_width model_height] [speedup_ratio]
+```
+
+`speedup_ratio` values:
+- `1.0`: automatic mode.
+- `0.0`: disabled.
+- `(0.0, 1.0)`: manual mode.
+
 If you modified the Vision model resolution, update the parameters in `rknn_qwen3_vl_vision.h`:
 
 ```cpp

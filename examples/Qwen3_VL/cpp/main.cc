@@ -93,17 +93,17 @@ int result_callback(void *userdata, RKLLMResult *result, LLMCallState state)
     }
     else if (state == RKLLM_RUN_NORMAL)
     {   
-        if (result->num_tokens > 1) {
-            for (int i = 0; i < result->num_tokens; i++)
-            {
-                std::string piece = tokenizer->Decode(result->token_ids, result->num_tokens);
-                printf("%s", piece.c_str());
-            }
+        // Get token text
+        std::string piece;
+        if (result->num_tokens == 1) {
+          piece = tokenizer->TokenToPiece(result->token_ids[0]);
+        } else {
+          piece = tokenizer->Decode(result->token_ids, result->num_tokens);
         }
-        else {
-            std::string piece = tokenizer->TokenToPiece(result->token_ids[0]);
-            printf("%s", piece.c_str());
-        }
+
+        // Print token text
+        printf("%s", piece.c_str());
+
         if (first_decode) {
             first_token = getCurrentTimeUs();
             first_decode = false;
@@ -185,12 +185,13 @@ void printf_perf(rknn_perf_metrics_t *p)
 -------------------------------------------*/
 int main(int argc, char **argv)
 {
-    if (argc != 11 && argc != 13)
+    if (argc != 11 && argc != 13 && argc != 14)
     {
-        printf("%s <vision_model_path> <vision_weight_path> <llm_model_path> <llm_weight_path> <tokenizer_path> <embedding_path> <vision_core_mask> <llm_core_mask> <image_path> <prompt> <model_width> <model_height>\n", argv[0]);
+        printf("%s <vision_model_path> <vision_weight_path> <llm_model_path> <llm_weight_path> <tokenizer_path> <embedding_path> <vision_core_mask> <llm_core_mask> <image_path> <prompt> [model_width model_height] [speedup_ratio]\n", argv[0]);
+        printf("  speedup_ratio: 1.0=Auto, 0.0=Disable, (0,1)=Manual (default: 1.0)\n");
         return -1;
     }
- 
+
     const char *vision_model_path  = argv[1];
     const char *vision_weight_path = argv[2];
     const char *llm_model_path     = argv[3];
@@ -201,11 +202,15 @@ int main(int argc, char **argv)
     uint32_t    llm_core_mask      = strtoul(argv[8], nullptr, 16);
     const char *img_path           = argv[9];
     const char *prompt             = argv[10];
-    uint32_t    model_width        = 0;  
-    uint32_t    model_height       = 0; 
-    if (argc == 13) {
+    uint32_t    model_width        = 0;
+    uint32_t    model_height       = 0;
+    float       speedup_ratio = 1.0f;
+    if (argc >= 13) {
         model_width  = strtoul(argv[11], nullptr, 0);
         model_height = strtoul(argv[12], nullptr, 0);
+    }
+    if (argc == 14) {
+        speedup_ratio = atof(argv[13]);
     }
     std::string prompt_with_image;
 
@@ -220,13 +225,14 @@ int main(int argc, char **argv)
     rknn_app_ctx.model_height = model_height;
 
     // Tokenizer
-    Tokenizer* tokenizer;
+    Tokenizer* tokenizer = NULL;
     VocabInfo vocab_info;
 
     // Embedding
     struct embedding_info embedding_info;
     struct stat           emb_st;
     memset(&embedding_info, 0x00, sizeof(embedding_info));
+    embedding_info.fd = -1;
 
     // LLM Param
     int n_params = 1;
@@ -239,7 +245,7 @@ int main(int argc, char **argv)
 
     // Image Embed
     size_t embed_elems = 1;
-    float16* img_embeds;
+    float16* img_embeds = NULL;
 
     // LLM Multi Model Tensor
     int n_inputs = 4;
@@ -250,7 +256,7 @@ int main(int argc, char **argv)
     RKLLMCallback callback;
     memset(&callback, 0, sizeof(RKLLMCallback));
 
-    // Load Toenizer
+    // Load Tokenizer
     tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
     if (!tokenizer)
     {
@@ -259,8 +265,17 @@ int main(int argc, char **argv)
     }
     
     tokenizer->GetVocabInfo(&(vocab_info));
-    printf("vocab_info: vocab_size=%d special_bos_id=%d special_eos_id=%d\n", vocab_info.vocab_size,
-            vocab_info.special_bos_id, vocab_info.special_eos_id);
+    printf("vocab_info: vocab_size=%d, special_bos_id=[", vocab_info.vocab_size);
+    for (int i = 0; i < vocab_info.n_special_bos_id; ++i)
+    {
+        printf("%d%s", vocab_info.special_bos_id[i], (i + 1 < vocab_info.n_special_bos_id) ? ", " : "");
+    }
+    printf("], special_eos_id=[");
+    for (int i = 0; i < vocab_info.n_special_eos_id; ++i)
+    {
+        printf("%d%s", vocab_info.special_eos_id[i], (i + 1 < vocab_info.n_special_eos_id) ? ", " : "");
+    }
+    printf("]\n");
 
     // Read Embedding
     embedding_info.fd = open(embedding_path, O_RDONLY);
@@ -316,6 +331,10 @@ int main(int argc, char **argv)
       embed_elems *= rknn_app_ctx.vision.embeds_shape[i];
     }
     img_embeds = (float16*)malloc((embed_elems) * sizeof(float16));
+    if (img_embeds == NULL) {
+        printf("malloc image embeds failed! elems=%zu\n", embed_elems);
+        goto out;
+    }
 
     // Read Image
     ret = read_image(img_path, &src_image);
@@ -345,7 +364,7 @@ int main(int argc, char **argv)
     tensor.image.image_content = "<|image_pad|>";
     tensor.enable_thinking     = false;
 
-    ret = inference_qwen3_vl_model(&rknn_app_ctx, &src_image, img_embeds, tensor, n_inputs, &perf);
+    ret = inference_qwen3_vl_model(&rknn_app_ctx, &src_image, img_embeds, tensor, n_inputs, &perf, speedup_ratio);
     if (ret != 0)
     {
         printf("inference qwen3_vl model fail! ret=%d\n", ret);

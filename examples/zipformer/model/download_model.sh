@@ -1,0 +1,3 @@
+wget -O encoder-epoch-99-avg-1-all-float.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/zipformer-mixed/encoder-epoch-99-avg-1-all-float.onnx
+wget -O decoder-epoch-99-avg-1.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/zipformer-mixed/decoder-epoch-99-avg-1.onnx
+wget -O joiner-epoch-99-avg-1.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/zipformer-mixed/joiner-epoch-99-avg-1.onnx

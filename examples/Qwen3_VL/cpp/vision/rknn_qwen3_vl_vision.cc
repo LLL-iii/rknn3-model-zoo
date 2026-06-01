@@ -22,6 +22,33 @@
 #include "file_utils.h"
 #include "image_utils.h"
 
+static rknn3_init_extend make_rknn3_init_extend(const char* tag)
+{
+    static char selected_device_id[RKNN3_MAX_DEV_LEN] = {0};
+    rknn3_init_extend init_extend;
+    memset(&init_extend, 0, sizeof(init_extend));
+
+    const char* env_device_id = getenv("RKNN3_DEVICE_ID");
+    if (env_device_id && env_device_id[0] != '\0') {
+        snprintf(selected_device_id, sizeof(selected_device_id), "%s", env_device_id);
+        init_extend.device_id = selected_device_id;
+        printf("[%s] use RKNN3_DEVICE_ID=%s\n", tag, selected_device_id);
+        return init_extend;
+    }
+
+    rknn3_devices devices;
+    memset(&devices, 0, sizeof(devices));
+    int ret = rknn3_find_devices(&devices);
+    if (ret == 0) {
+        if (devices.n_devices > 1) {
+            printf("[%s] multiple RKNN3 devices found, using device_id=%s\n",
+                   tag, devices.devices[0].id);
+            snprintf(selected_device_id, sizeof(selected_device_id), "%s", devices.devices[0].id);
+            init_extend.device_id = selected_device_id;
+        }
+    }
+    return init_extend;
+}
 
 static void dump_tensor_attr(rknn3_tensor_attr* attrs)
 {
@@ -58,7 +85,8 @@ int init_qwen3_vl_vision(rknn_qwen3_vl_vision_context* vision_ctx, const char* m
     config.user_mem_internal = 1; // 使用用户管理的internal内存
 
     // RKNN Init
-    ret = rknn3_init(&ctx, NULL);
+    rknn3_init_extend init_extend = make_rknn3_init_extend("VisionInit");
+    ret = rknn3_init(&ctx, init_extend.device_id ? &init_extend : NULL);
     if (ret < 0)
     {
         printf("rknn_init fail ret=%d\n", ret);

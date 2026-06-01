@@ -28,7 +28,11 @@ def readable_speed(speed):
         return "{:.2f} KB/s".format(speed_kbytes)
 
 def show_progress(blocknum, blocksize, totalsize):
-    speed = (blocknum * blocksize) / (time.time() - start_time)
+    elapsed = time.time() - start_time
+    if elapsed > 0:
+        speed = (blocknum * blocksize) / elapsed
+    else:
+        speed = 0
     speed_str = " Speed: {}".format(readable_speed(speed))
     recv_size = blocknum * blocksize
 
@@ -39,7 +43,7 @@ def show_progress(blocknum, blocksize, totalsize):
     s = ('#' * n).ljust(50, '-')
     f.write(progress_str.ljust(8, ' ') + '[' + s + ']' + speed_str)
     f.flush()
-    f.write('\r\n')
+    f.write('\r')
 
 def check_and_download_origin_model():
     global start_time

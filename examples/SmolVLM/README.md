@@ -16,7 +16,7 @@ python export_vision.py --modelscope
 python export_rknn.py
 ```
 
-### 1.3 LLM 模型
+### 1.2 LLM 模型
 
 ```bash
 cd python/llm
@@ -91,7 +91,7 @@ cd /data/rknn_SmolVLM_demo
 
 ## 3. GRQ量化
 GRQ 量化是 RKNN 为 w4a16 精度的 LLM 模型专门设计的一种量化方法，其思路类似于 GPTQ 量化。经过实际部署测试后发现采用默认的 MMBench 数据集进行 GRQ 量化时，模型的精度会下降。因此，建议根据实际应用场景自行构建校准数据集。
-你可以参考以下路径中的示例数据集作为构建参考：`rkllm3_model_zoo/datasets/MMBench/llm/dataset.json`
+你可以参考以下路径中的示例数据集作为构建参考：`rknn3_model_zoo/datasets/MMBench/llm/dataset.json`
 该数据集需为 JSON 格式，结构如下：
 ```sh
 [

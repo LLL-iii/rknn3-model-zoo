@@ -110,6 +110,26 @@ static void softmax_fp(float* array, int size) {
     }
 }
 
+static int convert_int8_to_fp32(const void *src, float *dst, int n_elems, float scale, int32_t zero_point)
+{
+
+    for (int i = 0; i < n_elems; i++)
+    {
+        dst[i] = ((float)((int8_t *)src)[i] - zero_point) * scale;
+    }
+
+    return 0;
+}
+
+static int convert_fp16_to_fp32(const float16* src, float* dst, int n_elems)
+{
+    for (int i = 0; i < n_elems; i++)
+    {
+        dst[i] = fp16_to_fp32(src[i]);
+    }
+    return 0;
+}
+
 static void softmax_i8(int8_t* array, int size, float scale, int32_t zp, float* outputs) {
     // Find the maximum value after dequantization
     float max_val = deqnt_i8_to_f32(array[0], zp, scale);
@@ -278,6 +298,10 @@ int init_mobilenet_model(const char* model_path, const char* weight_path, rknn_a
 
 int release_mobilenet_model(rknn_app_context_t* app_ctx)
 {
+    if (app_ctx == NULL || app_ctx->rknn_ctx == 0)
+    {
+        return -1;
+    }
     for (int i = 0; i < app_ctx->io_num.n_input; i++) {
         if (app_ctx->inputs && app_ctx->inputs[i].mem) {
             rknn3_destroy_mem(app_ctx->rknn_ctx, app_ctx->inputs[i].mem);
@@ -316,6 +340,8 @@ int inference_mobilenet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_i
 {
     int ret = 0;
     image_buffer_t img;
+    size_t dst_elems = 1;
+    float *output_data = NULL;
 
     memset(&img, 0, sizeof(image_buffer_t));
 
@@ -333,7 +359,8 @@ int inference_mobilenet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_i
     ret = convert_image(src_img, &img, NULL, NULL, 0);
     if (ret < 0) {
         printf("convert_image fail! ret=%d\n", ret);
-        return -1;
+        ret = -1;
+        goto out;
     }
 
     // Set Input Data
@@ -369,17 +396,56 @@ int inference_mobilenet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_i
         }
     }
 
-    if (app_ctx->is_quant) {
-        float res[app_ctx->outputs[0].attr->n_elems];
-        softmax_i8((int8_t*)app_ctx->outputs[0].mem->virt_addr, app_ctx->outputs[0].attr->n_elems, app_ctx->outputs[0].attr->qnt_info.scale, app_ctx->outputs[0].attr->qnt_info.zero_point, res);
-        get_topk_with_indices(res, app_ctx->outputs[0].attr->n_elems, topk, out_result);
-    }
-    else {
-        softmax_fp((float*)app_ctx->outputs[0].mem->virt_addr, app_ctx->outputs[0].attr->n_elems);
-        get_topk_with_indices((float*)app_ctx->outputs[0].mem->virt_addr, app_ctx->outputs[0].attr->n_elems, topk, out_result);
+    for (uint32_t j = 0; j < app_ctx->outputs[0].attr->n_dims; j++)
+    {
+        dst_elems *= app_ctx->outputs[0].attr->shape[j];
     }
 
+    output_data = (float *)malloc(dst_elems * sizeof(float));
+    if (output_data == NULL)
+    {
+        printf("Failed to allocate memory for output_data\n");
+        ret = -1;
+        goto out;
+    }
+
+    if (app_ctx->outputs[0].attr->layout == RKNN3_TENSOR_NCHW || app_ctx->outputs[0].attr->layout == RKNN3_TENSOR_UNDEFINED)
+    {
+        if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_INT8)
+        {
+            float scale = app_ctx->outputs[0].attr->qnt_info.scale;
+            int32_t zero_point = app_ctx->outputs[0].attr->qnt_info.zero_point;
+            convert_int8_to_fp32(app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems, scale, zero_point);
+        }
+        else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT16)
+        {
+            convert_fp16_to_fp32((const float16 *)app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems);
+        }
+        else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT32)
+        {
+            memcpy(output_data, app_ctx->outputs[0].mem->virt_addr, dst_elems * sizeof(float));
+        }
+        else
+        {
+            printf("Unsupported type for NCHW format: %s\n", rknn3_get_type_string(app_ctx->outputs[0].attr->dtype));
+            goto out;
+        }
+    }
+    else
+    {
+        printf("Unsupported output format: %s\n", rknn3_get_layout_string(app_ctx->outputs[0].attr->layout));
+        goto out;
+    }
+
+    softmax_fp(output_data, app_ctx->outputs[0].attr->n_elems);
+    get_topk_with_indices(output_data, app_ctx->outputs[0].attr->n_elems, topk, out_result);
+
 out:
+    if (output_data != NULL)
+    {
+        free(output_data);
+        output_data = NULL;
+    }
     if (img.virt_addr != NULL)
     {
         free(img.virt_addr);

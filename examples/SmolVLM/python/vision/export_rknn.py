@@ -12,14 +12,16 @@ if __name__ == '__main__':
     parser = ArgumentParser(description="SmolVLM-500M vision convert rknn") 
     parser.add_argument("--onnx_path", type=str, help="onnx model path", required=False, default=ONNX_MODEL)
     parser.add_argument("--rknn_path", type=str, help="output rknn model path", required=False, default=RKNN_MODEL)
+    parser.add_argument('--platform', type=str, default= "rk1820", help='Target platform (e.g. rk1820)')
     parser.add_argument("--dataset_path", type=str, help="model quantization dataset path", required=False, default=DATASET_PATH)
+    parser.add_argument('--core_num', type=int, default=8, help='core_num (1-8)')
     args = parser.parse_args()
 
     # Create RKNN object
     rknn = RKNN(verbose=True)
 
     print('--> config model')
-    rknn.config(target_platform='rk1820', core_num=8,
+    rknn.config(target_platform=args.platform, core_num=args.core_num,
                 quantized_dtype='w4a16', quantized_algorithm='normal', quantized_method='group32',
                 mean_values=[[127.5,127.5, 127.5]], #完整版
                 std_values=[[127.5, 127.5, 127.5]],
@@ -38,7 +40,7 @@ if __name__ == '__main__':
 
     # Build model
     print('--> Building model')
-    rknn.build(do_quantization=True, dataset=args.dataset_path)
+    ret = rknn.build(do_quantization=True, dataset=args.dataset_path)
     if ret != 0:
         print('Build model failed!')
         exit(ret)

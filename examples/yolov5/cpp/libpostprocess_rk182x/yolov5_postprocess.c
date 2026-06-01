@@ -205,7 +205,7 @@ static int quick_sort_indice_inverse(float *input, int left, int right, int *ind
     return low;
 }
 
-static inline int32_t __clip(float val, float min, float max)
+static inline float __clip(float val, float min, float max)
 {
     float f = val <= min ? min : (val >= max ? max : val);
     return f;

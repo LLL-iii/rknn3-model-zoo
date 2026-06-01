@@ -1,4 +1,3 @@
-import numpy as np
 from rknn.api import RKNN
 
 ONNX_MODEL = '../../model/llm/FastVLM-llm.onnx'
@@ -11,9 +10,11 @@ if __name__ == '__main__':
     from argparse import ArgumentParser
     parser = ArgumentParser(description="Export FastVLM llm to RKNN model") 
     parser.add_argument("--onnx_path", type=str, help="onnx model path", required=False, default=ONNX_MODEL)
+    parser.add_argument('--platform', type=str, default= "rk1820", help='Target platform (e.g. rk1820)')
     parser.add_argument("--config", type=str, help="config file path", required=False, default=LLM_CONFIG)
     parser.add_argument("--rknn_path", type=str, help="output rknn model path", required=False, default=RKNN_MODEL)
     parser.add_argument("--dataset_path", type=str, help="model quantization dataset path", required=False, default=DATASET_PATH)
+    parser.add_argument('--core_num', type=int, default=8, help='core_num (1-8)')
     args = parser.parse_args()
 
     # Create RKNN object
@@ -21,7 +22,7 @@ if __name__ == '__main__':
 
     # pre-process config
     print('--> config model')
-    rknn.config(target_platform='rk1820', 
+    rknn.config(target_platform=args.platform, core_num=args.core_num,
                 quantized_dtype='w4a16', quantized_algorithm='normal', quantized_method='group32',
                 )
     print('done')
@@ -36,13 +37,13 @@ if __name__ == '__main__':
 
     # Build model
     print('--> Building model')
-    rknn.build(do_quantization=True, dataset=args.dataset_path)
+    ret = rknn.build(do_quantization=True, dataset=args.dataset_path)
     if ret != 0:
         print('Build model failed!')
         exit(ret)
     print('done')
 
-    #Export rknn model
+    # Export rknn model
     print('--> Export RKNN model')
     ret = rknn.export_rknn(args.rknn_path)
     if ret != 0:

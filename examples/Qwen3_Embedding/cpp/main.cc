@@ -125,19 +125,17 @@ int result_callback(void *userdata, RKLLMResult *result, LLMCallState state)
     }
     else if (state == RKLLM_RUN_NORMAL)
     {
-        if (result->num_tokens > 1)
-        {
-            for (int i = 0; i < result->num_tokens; i++)
-            {
-                std::string piece = tokenizer->Decode(result->token_ids, result->num_tokens);
-                printf("%s", piece.c_str());
-            }
+        // Get token text
+        std::string piece;
+        if (result->num_tokens == 1) {
+          piece = tokenizer->TokenToPiece(result->token_ids[0]);
+        } else {
+          piece = tokenizer->Decode(result->token_ids, result->num_tokens);
         }
-        else
-        {
-            std::string piece = tokenizer->TokenToPiece(result->token_ids[0]);
-            printf("%s", piece.c_str());
-        }
+
+        // Print token text
+        printf("%s", piece.c_str());
+
         if (first_decode)
         {
             first_token = getCurrentTimeUs();
@@ -240,11 +238,9 @@ int main(int argc, char **argv)
     rknn3_input_output_num io_num;
     memset(&io_num, 0, sizeof(rknn3_input_output_num));
 
-    // for qwen3 embedding model, the number of input and output tensors is 9 and 1 respectively
-    rknn3_tensor inputs[9];
-    memset(inputs, 0, sizeof(inputs));
-    rknn3_tensor outputs[1];
-    memset(outputs, 0, sizeof(outputs));
+    // input/output tensors will be allocated after querying io_num
+    rknn3_tensor *inputs = NULL;
+    rknn3_tensor *outputs = NULL;
 
     // LLM Config
     rknn3_llm_config llm_config;
@@ -280,7 +276,7 @@ int main(int argc, char **argv)
     RKLLMCallback callback;
     memset(&callback, 0, sizeof(RKLLMCallback));
 
-    // Load Toenizer
+    // Load Tokenizer
     tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
     if (!tokenizer)
     {
@@ -341,6 +337,15 @@ int main(int argc, char **argv)
         goto out;
     }
 
+    // allocate input/output arrays based on queried counts
+    inputs = (rknn3_tensor *)calloc(io_num.n_input, sizeof(rknn3_tensor));
+    outputs = (rknn3_tensor *)calloc(io_num.n_output, sizeof(rknn3_tensor));
+    if (!inputs || !outputs)
+    {
+        printf("failed to allocate input/output tensor arrays\n");
+        goto out;
+    }
+
     // query input tensors info
     printf("input tensors:\n");
     for (uint32_t i = 0; i < io_num.n_input; i++)
@@ -397,7 +402,7 @@ int main(int argc, char **argv)
     ret = rknn3_query(rknn_app_ctx.rknn_ctx, RKNN3_QUERY_LLM_CONFIG, &llm_config, sizeof(rknn3_llm_config));
     if (ret != RKNN3_SUCCESS)
     {
-        printf("rknn3_query llm config failed! ret=%d", ret);
+        printf("rknn3_query llm config failed! ret=%d\n", ret);
         goto out;
     }
 
@@ -428,7 +433,7 @@ int main(int argc, char **argv)
     if (!session)
     {
         printf("Failed to initialize test session\n");
-        return -1;
+        goto out;
     }
 
     // Set Callback
@@ -436,7 +441,7 @@ int main(int argc, char **argv)
     if (ret < 0)
     {
         printf("Failed to set callback\n");
-        return -1;
+        goto out;
     }
 
     // Set to context
@@ -487,6 +492,18 @@ out:
         {
             rknn3_destroy_mem(rknn_app_ctx.rknn_ctx, outputs[i].mem);
         }
+    }
+
+    if (inputs)
+    {
+        free(inputs);
+        inputs = NULL;
+    }
+
+    if (outputs)
+    {
+        free(outputs);
+        outputs = NULL;
     }
 
     for (int i = 0; i < n_output_tensors; i++)

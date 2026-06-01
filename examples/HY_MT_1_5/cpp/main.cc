@@ -85,17 +85,17 @@ int result_callback(void *userdata, RKLLMResult *result, LLMCallState state)
     }
     else if (state == RKLLM_RUN_NORMAL)
     {
-        if (result->num_tokens > 1) {
-            for (int i = 0; i < result->num_tokens; i++)
-            {
-                std::string piece = tokenizer->Decode(result->token_ids, result->num_tokens);
-                printf("%s", piece.c_str());
-            }
+        // Get token text
+        std::string piece;
+        if (result->num_tokens == 1) {
+          piece = tokenizer->TokenToPiece(result->token_ids[0]);
+        } else {
+          piece = tokenizer->Decode(result->token_ids, result->num_tokens);
         }
-        else {
-            std::string piece = tokenizer->TokenToPiece(result->token_ids[0]);
-            printf("%s", piece.c_str());
-        }
+
+        // Print token text
+        printf("%s", piece.c_str());
+
         if (first_decode)
         {
           first_token = getCurrentTimeUs();
@@ -121,18 +121,18 @@ int tokenizer_callback(void *userdata, const char *text, int32_t text_len, int32
     return n_tokens;
 }
 
-int embed_callback(void* userdata, int32_t* tokens, uint64_t num_tokens, void* embded, uint64_t len)
+int embed_callback(void* userdata, int32_t* tokens, uint64_t num_tokens, void* embed, uint64_t len)
 {
-    struct embedding_info* embded_info = (struct embedding_info*)userdata;
+    struct embedding_info* embed_info = (struct embedding_info*)userdata;
 
-    if (len != num_tokens * embded_info->embedding_dim * sizeof(float16)) {
-        printf("invalid embded buffer\n");
+    if (len != num_tokens * embed_info->embedding_dim * sizeof(float16)) {
+        printf("invalid embed buffer\n");
         return -1;
     }
 
     for (int n = 0; n < num_tokens; n++) {
-        memcpy((unsigned char*)embded + n * embded_info->embedding_dim * sizeof(float16), embded_info->embedding_data + tokens[n] * embded_info->embedding_dim,
-                embded_info->embedding_dim * sizeof(float16));
+        memcpy((unsigned char*)embed + n * embed_info->embedding_dim * sizeof(float16), embed_info->embedding_data + tokens[n] * embed_info->embedding_dim,
+                embed_info->embedding_dim * sizeof(float16));
     }
 
     return 0;

@@ -12,8 +12,7 @@ def parse_arg():
         exit(1)
 
     model_path = sys.argv[1]
-    platform = 'rk1820'
-    # platform = sys.argv[2]
+    platform = sys.argv[2]
 
     do_quant = DEFAULT_QUANT
     if len(sys.argv) > 3:
@@ -41,7 +40,7 @@ if __name__ == '__main__':
 
     # Pre-process config
     print('--> Config model')
-    rknn.config(mean_values=[128, 128, 128], std_values=[128, 128, 128], target_platform='rk1820',
+    rknn.config(mean_values=[128, 128, 128], std_values=[128, 128, 128], target_platform=platform,
                 input_attrs={'input': {'dtype': 'uint8', 'layout': 'NHWC'}},
                 quantized_dtype='w8a8',
                 quantized_algorithm='normal',

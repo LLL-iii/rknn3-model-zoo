@@ -23,7 +23,7 @@
 
 #include <set>
 #include <vector>
-#define LABEL_NALE_TXT_PATH "./model/coco_80_labels_list.txt"
+#define LABEL_NAME_TXT_PATH "./model/coco_80_labels_list.txt"
 
 static char *labels[OBJ_CLASS_NUM];
 
@@ -91,7 +91,7 @@ static int readLines(const char *fileName, char *lines[], int max_line)
 
 static int loadLabelName(const char *locationFilename, char *label[])
 {
-    printf("load lable %s\n", locationFilename);
+    printf("load label %s\n", locationFilename);
     readLines(locationFilename, label, OBJ_CLASS_NUM);
     return 0;
 }
@@ -385,15 +385,18 @@ int post_process_after_exYoloPostProcess(rknn_app_context_t *app_ctx, void *outp
         float score = outputfp32[i*6];
         if(score > 0)
         {
-            float class_idx = outputfp32[i*6 + 1];
+            int id = outputfp32[i*6 + 1];
             float x1 = outputfp32[i*6 + 2] - letter_box->x_pad;
             float y1 = outputfp32[i*6 + 3] - letter_box->y_pad;
             float x2 = outputfp32[i*6 + 4] - letter_box->x_pad;
-            float y2 = outputfp32[i*6 + 5] - letter_box->y_pad;;
-            
-     
-            int id = outputfp32[i*6 + 1];
+            float y2 = outputfp32[i*6 + 5] - letter_box->y_pad;
+
             float obj_conf = score;
+
+            if (last_count >= OBJ_NUMB_MAX_SIZE)
+            {
+                break;
+            }
 
             od_results->results[last_count].box.left = (int)(clamp(x1, 0, model_in_w) / letter_box->scale);
             od_results->results[last_count].box.top = (int)(clamp(y1, 0, model_in_h) / letter_box->scale);
@@ -577,10 +580,10 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
 int init_post_process()
 {
     int ret = 0;
-    ret = loadLabelName(LABEL_NALE_TXT_PATH, labels);
+    ret = loadLabelName(LABEL_NAME_TXT_PATH, labels);
     if (ret < 0)
     {
-        printf("Load %s failed!\n", LABEL_NALE_TXT_PATH);
+        printf("Load %s failed!\n", LABEL_NAME_TXT_PATH);
         return -1;
     }
     return 0;

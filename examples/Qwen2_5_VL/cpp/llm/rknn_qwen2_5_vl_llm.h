@@ -30,7 +30,6 @@ extern const char* prompt_postfix;
 typedef struct {
     rknn3_context   rknn_ctx;
     rknn3_session* rknn_sess;
-
 } rknn_qwen2_5_vl_llm_context;
 
 int init_qwen2_5_vl_llm(rknn_qwen2_5_vl_llm_context* llm_ctx, const char* model_path, const char* weight_path, rknn3_llm_param* params, int n_params, RKLLMCallback callback, uint32_t core_mask);

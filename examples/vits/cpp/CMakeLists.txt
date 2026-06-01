@@ -1,0 +1,65 @@
+cmake_minimum_required(VERSION 3.10)
+
+project(rknn_vits_demo)
+
+if (ENABLE_ASAN)
+    message(STATUS "BUILD WITH ADDRESS SANITIZER")
+    set (CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+    set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+    set (CMAKE_LINKER_FLAGS_DEBUG "${CMAKE_LINKER_FLAGS_DEBUG} -fno-omit-frame-pointer -fsanitize=address")
+endif ()
+
+set(rknpu_vits_file rknpu3/vits.cc)
+
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/ 3rdparty.out)
+add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/../../../utils/ utils.out)
+
+set(CMAKE_INSTALL_RPATH "$ORIGIN/lib")
+
+file(GLOB SRCS ${CMAKE_CURRENT_SOURCE_DIR}/*.cc)
+
+# Main VITS demo
+add_executable(${PROJECT_NAME}
+    main.cc
+    text_processor.cc
+    vits.cc
+    # ${rknpu_vits_file}
+)
+
+target_link_libraries(${PROJECT_NAME}
+    fileutils
+    audioutils
+    ${LIBRKNNAPI}
+    ${LIBKALDI_NATIVE_FBANK}
+    ${LIBESPEAK_NG}
+    ${LIBUCD}
+    ${LIBSPEECH_PLAYER}
+)
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Android")
+    target_link_libraries(${PROJECT_NAME}
+        log
+    )
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(THREADS_PREFER_PTHREAD_FLAG ON)
+    find_package(Threads REQUIRED)
+    target_link_libraries(${PROJECT_NAME} Threads::Threads dl)
+endif()
+
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${ESPEAK_NG_INCLUDES}
+    ${LIBRKNNAPI_INCLUDES}
+    ${LIBKALDI_NATIVE_FBANK_INCLUDES}
+)
+
+install(TARGETS ${PROJECT_NAME} DESTINATION .)
+file(GLOB RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*.rknn")
+install(FILES ${RKNN_FILES} DESTINATION model)
+file(GLOB WEIGHT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*.weight")
+install(FILES ${WEIGHT_FILES} DESTINATION model)
+
+# Install espeak-ng-data directory
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../../3rdparty/espeak-ng/espeak-ng-data DESTINATION model)

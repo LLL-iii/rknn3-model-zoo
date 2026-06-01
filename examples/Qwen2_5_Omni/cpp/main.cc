@@ -86,17 +86,17 @@ int result_callback(void *userdata, RKLLMResult *result, LLMCallState state)
     }
     else if (state == RKLLM_RUN_NORMAL)
     {   
-        if (result->num_tokens > 1) {
-            for (int i = 0; i < result->num_tokens; i++)
-            {
-                std::string piece = tokenizer->Decode(result->token_ids, result->num_tokens);
-                printf("%s", piece.c_str());
-            }
+        // Get token text
+        std::string piece;
+        if (result->num_tokens == 1) {
+          piece = tokenizer->TokenToPiece(result->token_ids[0]);
+        } else {
+          piece = tokenizer->Decode(result->token_ids, result->num_tokens);
         }
-        else {
-            std::string piece = tokenizer->TokenToPiece(result->token_ids[0]);
-            printf("%s", piece.c_str());
-        }
+
+        // Print token text
+        printf("%s", piece.c_str());
+
         if (first_decode) {
           first_token = getCurrentTimeUs();
           first_decode = false;
@@ -254,7 +254,7 @@ int main(int argc, char **argv)
     int n_image = 0;
     int n_audio = 0;
 
-    // Load Toenizer
+    // Load Tokenizer
     tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
     if (!tokenizer)
     {

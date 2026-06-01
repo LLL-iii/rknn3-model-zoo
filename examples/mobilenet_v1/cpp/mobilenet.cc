@@ -23,48 +23,56 @@
 #include "file_utils.h"
 #include "image_utils.h"
 
-static void dump_tensor_attr(rknn3_tensor_attr* attrs)
+static void dump_tensor_attr(rknn3_tensor_attr *attrs)
 {
     std::string shape_str = "";
-    for (int j = 0; j < attrs->n_dims; j++) {
-      shape_str += std::to_string(attrs->shape[j]);
-      if (j < attrs->n_dims - 1) {
-        shape_str += ", ";
-      }
+    for (int j = 0; j < attrs->n_dims; j++)
+    {
+        shape_str += std::to_string(attrs->shape[j]);
+        if (j < attrs->n_dims - 1)
+        {
+            shape_str += ", ";
+        }
     }
-  
+
     std::string stride_str = "";
-    for (int j = 0; j < attrs->n_stride; j++) {
-      stride_str += std::to_string(attrs->stride[j]);
-      if (j < attrs->n_stride - 1) {
-        stride_str += ", ";
-      }
+    for (int j = 0; j < attrs->n_stride; j++)
+    {
+        stride_str += std::to_string(attrs->stride[j]);
+        if (j < attrs->n_stride - 1)
+        {
+            stride_str += ", ";
+        }
     }
-  
+
     printf("Tensor: name=%s, n_dims=%d, shape=[%s], stride=[%s], aligned_size=%ld, layout=%s, dtype=%s, core_id=%d, "
            "qnt_type=%s\n",
            attrs->name, attrs->n_dims, shape_str.c_str(), stride_str.c_str(), attrs->aligned_size, rknn3_get_layout_string(attrs->layout),
            rknn3_get_type_string(attrs->dtype), attrs->core_id, rknn3_get_qnt_type_string(attrs->qnt_type));
 }
 
-
-typedef struct {
+typedef struct
+{
     float value;
     int index;
 } element_t;
 
-static void swap(element_t* a, element_t* b) {
+static void swap(element_t *a, element_t *b)
+{
     element_t temp = *a;
     *a = *b;
     *b = temp;
 }
 
-static int partition(element_t arr[], int low, int high) {
+static int partition(element_t arr[], int low, int high)
+{
     float pivot = arr[high].value;
     int i = low - 1;
 
-    for (int j = low; j <= high - 1; j++) {
-        if (arr[j].value >= pivot) {
+    for (int j = low; j <= high - 1; j++)
+    {
+        if (arr[j].value >= pivot)
+        {
             i++;
             swap(&arr[i], &arr[j]);
         }
@@ -74,46 +82,56 @@ static int partition(element_t arr[], int low, int high) {
     return (i + 1);
 }
 
-static void quick_sort(element_t arr[], int low, int high) {
-    if (low < high) {
+static void quick_sort(element_t arr[], int low, int high)
+{
+    if (low < high)
+    {
         int pi = partition(arr, low, high);
         quick_sort(arr, low, pi - 1);
         quick_sort(arr, pi + 1, high);
     }
 }
 
-static void softmax(float* array, int size) {
+static void softmax(float *array, int size)
+{
     // Find the maximum value in the array
     float max_val = array[0];
-    for (int i = 1; i < size; i++) {
-        if (array[i] > max_val) {
+    for (int i = 1; i < size; i++)
+    {
+        if (array[i] > max_val)
+        {
             max_val = array[i];
         }
     }
 
     // Subtract the maximum value from each element to avoid overflow
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++)
+    {
         array[i] -= max_val;
     }
 
     // Compute the exponentials and sum
     float sum = 0.0;
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++)
+    {
         array[i] = expf(array[i]);
         sum += array[i];
     }
 
     // Normalize the array by dividing each element by the sum
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < size; i++)
+    {
         array[i] /= sum;
     }
 }
 
-static void get_topk_with_indices(float arr[], int size, int k, mobilenet_result* result) {
+static void get_topk_with_indices(float arr[], int size, int k, mobilenet_result *result)
+{
 
-    // Create an array of elements, saving values ​​and index numbers
-    element_t* elements = (element_t*)malloc(size * sizeof(element_t));
-    for (int i = 0; i < size; i++) {
+    // Create an array of elements, saving values and index numbers
+    element_t *elements = (element_t *)malloc(size * sizeof(element_t));
+    for (int i = 0; i < size; i++)
+    {
         elements[i].value = arr[i];
         elements[i].index = i;
     }
@@ -121,8 +139,9 @@ static void get_topk_with_indices(float arr[], int size, int k, mobilenet_result
     // Quick sort an array of elements
     quick_sort(elements, 0, size - 1);
 
-    // Get the top K maximum values ​​and their index numbers
-    for (int i = 0; i < k; i++) {
+    // Get the top K maximum values and their index numbers
+    for (int i = 0; i < k; i++)
+    {
         result[i].score = elements[i].value;
         result[i].cls = elements[i].index;
     }
@@ -130,28 +149,27 @@ static void get_topk_with_indices(float arr[], int size, int k, mobilenet_result
     free(elements);
 }
 
-static int convert_int8_to_fp32(const void *src, float *dst, int n_elems, rknn3_tensor_type type, float scale, int32_t zero_point)
+static int convert_int8_to_fp32(const void *src, float *dst, int n_elems, float scale, int32_t zero_point)
 {
 
-  for (int i = 0; i < n_elems; i++)
-  {
-    dst[i] = ((float)((int8_t *)src)[i] - zero_point) * scale;
-  }
+    for (int i = 0; i < n_elems; i++)
+    {
+        dst[i] = ((float)((int8_t *)src)[i] - zero_point) * scale;
+    }
 
-  return 0;
+    return 0;
 }
 
 static int convert_fp16_to_fp32(const float16 *src, float *dst, int n_elems)
 {
-  for (int i = 0; i < n_elems; i++)
-  {
-    dst[i] = fp16_to_fp32(src[i]);
-  }
-  return 0;
+    for (int i = 0; i < n_elems; i++)
+    {
+        dst[i] = fp16_to_fp32(src[i]);
+    }
+    return 0;
 }
 
-
-int init_mobilenet_model(const char* model_path, const char* weight_path, rknn_app_context_t* app_ctx, uint32_t core_mask)
+int init_mobilenet_model(const char *model_path, const char *weight_path, rknn_app_context_t *app_ctx, uint32_t core_mask)
 {
     int ret;
     int model_len = 0;
@@ -178,9 +196,10 @@ int init_mobilenet_model(const char* model_path, const char* weight_path, rknn_a
         return -1;
     }
 
-    //Init RKNN Model
+    // Init RKNN Model
     ret = rknn3_model_init(ctx, &config);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         printf("rknn_model_init failed! ret=%d\n", ret);
         return ret;
     }
@@ -194,7 +213,6 @@ int init_mobilenet_model(const char* model_path, const char* weight_path, rknn_a
         return ret;
     }
     printf("model input num: %d, output num: %d\n", io_num.n_input, io_num.n_output);
-
 
     // Get Model Input Info
     printf("input tensors:\n");
@@ -227,18 +245,20 @@ int init_mobilenet_model(const char* model_path, const char* weight_path, rknn_a
     }
 
     // Set to context
-    app_ctx->inputs = (rknn3_tensor*)malloc(io_num.n_input * sizeof(rknn3_tensor));
-    app_ctx->outputs = (rknn3_tensor*)malloc(io_num.n_output * sizeof(rknn3_tensor));
+    app_ctx->inputs = (rknn3_tensor *)malloc(io_num.n_input * sizeof(rknn3_tensor));
+    app_ctx->outputs = (rknn3_tensor *)malloc(io_num.n_output * sizeof(rknn3_tensor));
     app_ctx->rknn_ctx = ctx;
     app_ctx->io_num = io_num;
-    for (int i = 0; i < app_ctx->io_num.n_input; i++) {
-        app_ctx->inputs[i].mem  = rknn3_create_mem(ctx, input_attrs[i].aligned_size, input_attrs[i].core_id, RKNN3_FLAG_MEMORY_CACHEABLE);
-        app_ctx->inputs[i].attr = (rknn3_tensor_attr*)malloc(sizeof(rknn3_tensor_attr));
+    for (int i = 0; i < app_ctx->io_num.n_input; i++)
+    {
+        app_ctx->inputs[i].mem = rknn3_create_mem(ctx, input_attrs[i].aligned_size, input_attrs[i].core_id, RKNN3_FLAG_MEMORY_CACHEABLE);
+        app_ctx->inputs[i].attr = (rknn3_tensor_attr *)malloc(sizeof(rknn3_tensor_attr));
         memcpy(app_ctx->inputs[i].attr, &(input_attrs[i]), sizeof(rknn3_tensor_attr));
     }
-    for (int i = 0; i < app_ctx->io_num.n_output; i++) {
-        app_ctx->outputs[i].mem  = rknn3_create_mem(ctx, output_attrs[i].aligned_size, output_attrs[i].core_id, RKNN3_FLAG_MEMORY_CACHEABLE);
-        app_ctx->outputs[i].attr = (rknn3_tensor_attr*)malloc(sizeof(rknn3_tensor_attr));
+    for (int i = 0; i < app_ctx->io_num.n_output; i++)
+    {
+        app_ctx->outputs[i].mem = rknn3_create_mem(ctx, output_attrs[i].aligned_size, output_attrs[i].core_id, RKNN3_FLAG_MEMORY_CACHEABLE);
+        app_ctx->outputs[i].attr = (rknn3_tensor_attr *)malloc(sizeof(rknn3_tensor_attr));
         memcpy(app_ctx->outputs[i].attr, &(output_attrs[i]), sizeof(rknn3_tensor_attr));
     }
 
@@ -271,31 +291,43 @@ int init_mobilenet_model(const char* model_path, const char* weight_path, rknn_a
     return 0;
 }
 
-int release_mobilenet_model(rknn_app_context_t* app_ctx)
+int release_mobilenet_model(rknn_app_context_t *app_ctx)
 {
-    for (int i = 0; i < app_ctx->io_num.n_input; i++) {
-        if (app_ctx->inputs && app_ctx->inputs[i].mem) {
+    if (app_ctx == NULL || app_ctx->rknn_ctx == 0)
+    {
+        return -1;
+    }
+    for (int i = 0; i < app_ctx->io_num.n_input; i++)
+    {
+        if (app_ctx->inputs && app_ctx->inputs[i].mem)
+        {
             rknn3_destroy_mem(app_ctx->rknn_ctx, app_ctx->inputs[i].mem);
         }
-        if (app_ctx->inputs && app_ctx->inputs[i].attr != NULL) {
+        if (app_ctx->inputs && app_ctx->inputs[i].attr != NULL)
+        {
             free(app_ctx->inputs[i].attr);
             app_ctx->inputs[i].attr = NULL;
         }
     }
-    if (app_ctx->inputs) {
+    if (app_ctx->inputs)
+    {
         free(app_ctx->inputs);
         app_ctx->inputs = NULL;
     }
-    for (int i = 0; i < app_ctx->io_num.n_output; i++) {
-        if (app_ctx->outputs && app_ctx->outputs[i].mem) {
+    for (int i = 0; i < app_ctx->io_num.n_output; i++)
+    {
+        if (app_ctx->outputs && app_ctx->outputs[i].mem)
+        {
             rknn3_destroy_mem(app_ctx->rknn_ctx, app_ctx->outputs[i].mem);
         }
-        if (app_ctx->outputs && app_ctx->outputs[i].attr != NULL) {
+        if (app_ctx->outputs && app_ctx->outputs[i].attr != NULL)
+        {
             free(app_ctx->outputs[i].attr);
             app_ctx->outputs[i].attr = NULL;
         }
     }
-    if (app_ctx->outputs) {
+    if (app_ctx->outputs)
+    {
         free(app_ctx->outputs);
         app_ctx->outputs = NULL;
     }
@@ -307,11 +339,11 @@ int release_mobilenet_model(rknn_app_context_t* app_ctx)
     return 0;
 }
 
-int inference_mobilenet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_img, mobilenet_result* out_result, int topk)
+int inference_mobilenet_model(rknn_app_context_t *app_ctx, image_buffer_t *src_img, mobilenet_result *out_result, int topk)
 {
     int ret = 0;
     image_buffer_t img;
-    int dst_elems = 1;
+    size_t dst_elems = 1;
     float *output_data = NULL;
     int i = 0;
 
@@ -322,20 +354,23 @@ int inference_mobilenet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_i
     img.height = app_ctx->model_height;
     img.format = IMAGE_FORMAT_RGB888;
     img.size = get_image_size(&img);
-    img.virt_addr = (unsigned char*)malloc(img.size);
-    if (img.virt_addr == NULL) {
+    img.virt_addr = (unsigned char *)malloc(img.size);
+    if (img.virt_addr == NULL)
+    {
         printf("malloc buffer size:%d fail!\n", img.size);
         return -1;
     }
 
     ret = convert_image(src_img, &img, NULL, NULL, 0);
-    if (ret < 0) {
+    if (ret < 0)
+    {
         printf("convert_image fail! ret=%d\n", ret);
-        return -1;
+        ret = -1;
+        goto out;
     }
 
     // Set Input Data
-    memcpy(app_ctx->inputs[0].mem->virt_addr, (uint8_t*)img.virt_addr, img.size);
+    memcpy(app_ctx->inputs[0].mem->virt_addr, (uint8_t *)img.virt_addr, img.size);
 
     // Sync inputs
     for (i = 0; i < app_ctx->io_num.n_input; i++)
@@ -369,39 +404,45 @@ int inference_mobilenet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_i
 
     for (uint32_t j = 0; j < app_ctx->outputs[0].attr->n_dims; j++)
     {
-      dst_elems *= app_ctx->outputs[0].attr->shape[j];
+        dst_elems *= app_ctx->outputs[0].attr->shape[j];
     }
 
     output_data = (float *)malloc(dst_elems * sizeof(float));
     if (output_data == NULL)
     {
-      printf("Failed to allocate memory for output_data\n");
-      goto out;
+        printf("Failed to allocate memory for output_data\n");
+        ret = -1;
+        goto out;
     }
     if (app_ctx->outputs[0].attr->layout == RKNN3_TENSOR_NCHW || app_ctx->outputs[0].attr->layout == RKNN3_TENSOR_UNDEFINED)
     {
-      if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_INT8)
-      {
-        float scale = app_ctx->outputs[0].attr->qnt_info.scale;
-        int32_t zero_point = app_ctx->outputs[0].attr->qnt_info.zero_point;
-        convert_int8_to_fp32(app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems, app_ctx->outputs[0].attr->dtype, scale, zero_point);
-      }
-      else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT16)
-      {
-        convert_fp16_to_fp32((const float16 *)app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems);
-      }
-      else{
-        printf("Unsupported type for NCHW format: %s\n", rknn3_get_type_string(app_ctx->outputs[0].attr->dtype));
-        goto out;
-      }
+        if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_INT8)
+        {
+            float scale = app_ctx->outputs[0].attr->qnt_info.scale;
+            int32_t zero_point = app_ctx->outputs[0].attr->qnt_info.zero_point;
+            convert_int8_to_fp32(app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems, scale, zero_point);
+        }
+        else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT16)
+        {
+            convert_fp16_to_fp32((const float16 *)app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems);
+        }
+        else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT32)
+        {
+            memcpy(output_data, app_ctx->outputs[0].mem->virt_addr, dst_elems * sizeof(float));
+        }
+        else
+        {
+            printf("Unsupported type for NCHW format: %s\n", rknn3_get_type_string(app_ctx->outputs[0].attr->dtype));
+            goto out;
+        }
     }
     else
     {
-      printf("Unsupported output format: %s\n", rknn3_get_layout_string(app_ctx->outputs[0].attr->layout));
-      goto out;
+        printf("Unsupported output format: %s\n", rknn3_get_layout_string(app_ctx->outputs[0].attr->layout));
+        goto out;
     }
 
-    get_topk_with_indices((float*)output_data, app_ctx->outputs[0].attr->n_elems, topk, out_result);
+    get_topk_with_indices((float *)output_data, app_ctx->outputs[0].attr->n_elems, topk, out_result);
 
 out:
     if (output_data != NULL)

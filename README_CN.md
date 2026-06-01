@@ -15,24 +15,50 @@ RKNN3 SDK 提供了将 AI 模型部署到 RK1820/RK1828 协处理器所需的完
 
 ## 1. 支持的模型
 
-- Qwen2.5
-- Qwen2.5-VL
-- Qwen2.5-Omni
-- Qwen3
-- Qwen3-VL
-- Qwen3-Embedding
+### LLM/VLM
+
 - FastVLM
+- SmolVLM / SmolVLM2
+- GLM-Edge
+- GME-Qwen2-VL
 - InternVLM
 - Janus-Pro
-- SmolVLM
-- MiniCPM-V-4
-- UI_TARS
-- GME-Qwen2-VL
-- glm-edge
-- MobileNetV1/V2、ResNet50
-- YOLOv5/v6/v8
-- SenseVoice
+- MiniCPM-V / MiniCPM-V-4
+- Qwen2.5 / Qwen2.5-VL / Qwen2.5-Omni
+- Qwen3 / Qwen3-VL / Qwen3-VL-LoRA
+- Gemma-4
+
+
+### ASR（语音识别）
+
+- Qwen3-ASR（流式/非流式）
+- SenseVoiceSmall
+- Zipformer
+
+### TTS（语音合成）
+
+- Qwen3-TTS
+- VITS（LJSpeech / VCTK）
+
+### Embedding / Reranker（语义向量与排序）
+
+- Qwen3-Embedding
+- Qwen3-Reranker
+
+### 翻译
+
 - HY-MT1.5
+
+## OCR
+
+- PaddleOCR-VL
+
+### CV（计算机视觉）
+
+- MobileNetV1 / MobileNetV2 / ResNet
+- YOLOv5 / YOLOv6 / YOLOv8
+- DINOv3
+- SigLIP2
 
 ## 2. 支持的平台
 
@@ -40,6 +66,13 @@ RKNN3 SDK 提供了将 AI 模型部署到 RK1820/RK1828 协处理器所需的完
 |--------|----------|----------|
 | RK3588 系列 | RK1820 / RK1828 | Linux / Android |
 | RK3576 系列 | RK1820 / RK1828 | Linux / Android |
+| RK3572 系列 | - | Linux / Android |
+
+> **构建与运行时库说明**：
+> - 顶层构建脚本 `build-linux.sh` / `build-android.sh` 的 `-t` 参数支持 `rk3588`、`rk3576`、`rk3572`、`x86`。
+> - 示例安装目录 `lib/` 中的 RKNN3 Runtime 库按 SoC 区分：
+>   - `RK3588` / `RK3576`：安装 `librknn3_api.so` 和 `librknn3_api_rkcp.so`
+>   - `RK3572`：安装 `librknn3_api.so` 和 `librknn3_api_native.so`
 
 ## 3. LLM 模型部署（以 Qwen2.5-3B 为例）
 
@@ -64,11 +97,11 @@ python export_llm.py --quant
 | `--quan_dataset` | bool | 生成量化数据集（需 `--load_weight=True`） | `True` |
 | `--model_path` | str | 模型路径或 HuggingFace 名称 | `Qwen/Qwen2.5-3B-Instruct` |
 | `--export_llm_path` | str | 导出路径 | `../model/llm/Qwen2.5-3B-Instruct.onnx` |
-| `--quant` | bool | 启用 AWQ + GRQ 量化算法 | `False` |
+| `--quant` | bool | 启用 GRQ 量化算法 | `False` |
 | `--modelscope` | bool | 从 ModelScope 下载模型（国内用户推荐） | `False` |
 
 > **说明**：
-> - 使用 AWQ + GRQ 量化时，模型自带量化参数，转换 RKNN 时无需量化数据集
+> - 使用 GRQ 量化时，模型自带量化参数，转换 RKNN 时无需量化数据集
 > - 导出的配置文件包括：ONNX 模型、Config、Tokenizer、Embed 文件
 
 ### 3.2 导出 RKNN 模型
@@ -87,7 +120,7 @@ python export_rknn.py
 | `--dataset_path` | str | 量化数据集路径 | `../data/dataset.txt` |
 
 > **说明**：
-> - 使用 AWQ + GRQ 量化时，转换 RKNN 会忽略量化数据集
+> - 使用 GRQ 量化时，转换 RKNN 会忽略量化数据集
 > - 导出采用权重分离模式，生成 `.rknn` 和 `.weight` 两个文件
 
 ### 3.3 Linux 平台示例
@@ -164,7 +197,7 @@ python export_vision.py
 
 > **说明**：
 > - 模型需从外部下载
-> - 使用 AWQ + GRQ 量化时，模型自带量化参数，转换 RKNN 时无需量化数据集
+> - 使用 GRQ 量化时，模型自带量化参数，转换 RKNN 时无需量化数据集
 > - 导出的配置文件包括：ONNX 模型、Config、Tokenizer、Embed 文件
 
 #### Vision 导出参数（export_vision.py）
@@ -210,7 +243,7 @@ python export_rknn.py
 | `--dataset_path` | str | 量化数据集路径 | `../../data/llm/dataset.txt` |
 
 > **说明**：
-> - 使用 AWQ + GRQ 量化时，转换 RKNN 会忽略量化数据集
+> - 使用 GRQ 量化时，转换 RKNN 会忽略量化数据集
 > - 导出采用权重分离模式，生成 `.rknn` 和 `.weight` 两个文件
 
 ### 4.3 Linux 平台示例
@@ -254,6 +287,118 @@ export LD_LIBRARY_PATH=./lib
     model/demo.jpg \
     "Please describe the content of the picture."
 ```
+### 4.4 SpeedUP 用法
+
+本仓库的 Qwen2.5-VL 和 Qwen3-VL 示例可链接 SpeedUP 第三方库，用于推理加速。
+
+#### 文件位置
+
+发布包中需要保留以下文件：
+
+```text
+3rdparty/SpeedUP/
+├── include/speedup.h
+├── Linux/aarch64/libSpeedUP.so
+└── Android/arm64-v8a/libSpeedUP.so
+```
+
+#### 编译
+
+Qwen2.5-VL：
+
+```bash
+./build-linux.sh -t rk3588 -a aarch64 -d Qwen2_5_VL
+```
+
+Qwen3-VL：
+
+```bash
+./build-linux.sh -t rk3588 -a aarch64 -d Qwen3_VL
+```
+
+编译完成后，`libSpeedUP.so` 会安装到对应 demo 的 `lib/` 目录。
+
+#### 运行参数
+
+Qwen2.5-VL：
+
+```bash
+./rknn_qwen2_5_vl_demo \
+    <vision_model_path> <vision_weight_path> \
+    <llm_model_path> <llm_weight_path> \
+    <tokenizer_path> <embedding_path> \
+    <vision_core_mask> <llm_core_mask> \
+    <image_path> <prompt> \
+    [model_width model_height] [speedup_ratio]
+```
+
+Qwen3-VL：
+
+```bash
+./rknn_qwen3_vl_demo \
+    <vision_model_path> <vision_weight_path> \
+    <llm_model_path> <llm_weight_path> \
+    <tokenizer_path> <embedding_path> \
+    <vision_core_mask> <llm_core_mask> \
+    <image_path> <prompt> \
+    [model_width model_height] [speedup_ratio]
+```
+
+`speedup_ratio` 为可选参数：
+
+| 参数值 | 模式 |
+|--------|------|
+| `1.0` | 自动模式 |
+| `0.0` | 关闭 |
+| `(0.0, 1.0)` | 手动模式 |
+
+RKNN3 多核设备通常可使用：
+
+```bash
+0xff 0xff
+```
+
+#### 运行示例
+
+Qwen2.5-VL：
+
+```bash
+cd /userdata/rknn3-model-zoo/install/rk3588_linux_aarch64/rknn_Qwen2_5_VL_demo
+export LD_LIBRARY_PATH=./lib:$LD_LIBRARY_PATH
+
+./rknn_qwen2_5_vl_demo \
+    /userdata/Qwen2.5-VL-3B/Qwen2.5-VL-3B-vision.rknn \
+    /userdata/Qwen2.5-VL-3B/Qwen2.5-VL-3B-vision.weight \
+    /userdata/Qwen2.5-VL-3B/Qwen2.5-VL-3B-llm.rknn \
+    /userdata/Qwen2.5-VL-3B/Qwen2.5-VL-3B-llm.weight \
+    /userdata/Qwen2.5-VL-3B/Qwen2.5-VL-3B-llm.tokenizer.gguf \
+    /userdata/Qwen2.5-VL-3B/Qwen2.5-VL-3B-llm.embed.bin \
+    0xff 0xff \
+    /userdata/rknn3-model-zoo/examples/Qwen2_5_VL/data/vision/demo.jpg \
+    "请描述这张图片" \
+    392 392 \
+    1.0
+```
+
+Qwen3-VL：
+
+```bash
+cd /userdata/rknn3-model-zoo/install/rk3588_linux_aarch64/rknn_Qwen3_VL_demo
+export LD_LIBRARY_PATH=./lib:$LD_LIBRARY_PATH
+
+./rknn_qwen3_vl_demo \
+    /userdata/Qwen3-VL-model/Qwen3-VL-4B-vision_384_384.rknn \
+    /userdata/Qwen3-VL-model/Qwen3-VL-4B-vision_384_384.weight \
+    /userdata/Qwen3-VL-model/Qwen3-VL-4B-llm.rknn \
+    /userdata/Qwen3-VL-model/Qwen3-VL-4B-llm.weight \
+    /userdata/Qwen3-VL-model/Qwen3-VL-4B-llm.tokenizer.gguf \
+    /userdata/Qwen3-VL-model/Qwen3-VL-4B-llm.embed.bin \
+    0xff 0xff \
+    /userdata/rknn3-model-zoo/examples/Qwen2_5_VL/data/vision/demo.jpg \
+    "请描述这张图片" \
+    384 384 \
+    1.0
+```
 
 ## 5. 模型适配指南
 
@@ -263,9 +408,11 @@ export LD_LIBRARY_PATH=./lib
 
 ## 6. 注意事项
 
-- **Transformers 版本**：不同模型依赖的 `transformers` 版本可能不同，导出 ONNX 前请安装对应版本。版本信息可从模型的config.json（例如https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/config.json ）中的 `transformers_version` 字段获取。
+- **Transformers 版本**：不同模型依赖的 `transformers` 版本可能不同，导出 ONNX 前请安装对应版本。版本信息可从模型的 config.json（例如 https://huggingface.co/Qwen/Qwen2.5-7B-Instruct/blob/main/config.json ）中的 `transformers_version` 字段获取。部分模型有特殊版本要求，见各示例目录下的 `requirements.txt`。
 
-- **PyTorch 版本**：建议使用 PyTorch <= 2.8.0（Qwen3-VL等少数模型，需 PyTorch >= 2.9.0，具体看对应模型下的requirements.txt）
+- **PyTorch 版本**：建议使用 PyTorch <= 2.8.0（Qwen3-VL、Gemma-4 等模型需 PyTorch >= 2.9.0，PaddleOCR-VL 需 transformers == 4.55.0，具体看对应模型下的 requirements.txt）
+
+- **模块兼容性**：Gemma-4 的 Audio 模型与 LLM 模型需使用同一版本（同为 E2B 或同为 E4B），不可混用。
 
 ## 7. 其他说明
 

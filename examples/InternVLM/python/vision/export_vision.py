@@ -34,7 +34,7 @@ if __name__ == '__main__':
         print("args.load_weight")
         model = AutoModel.from_pretrained(args.model_path, **kwargs).eval()
     else:
-        print("not args.from_config")
+        print("not args.load_weight")
         kwargs = {   
             'torch_dtype': torch.float32,  
             'trust_remote_code': True,

@@ -24,7 +24,7 @@ cd python
 python export_rknn.py
 ```
 
-## 3. C++ 板端部署
+## 4. C++ 板端部署
 
 ```bash
 cd rknn3_model_zoo/

@@ -611,3 +611,57 @@ def export_internvl_vision(internvl_model, args):
         opset_version=17
     )
     print(f"Exported to {os.path.abspath(args.export_vision_path)}")
+
+def export_gemma4_audio(model, args):
+    import torch
+    import os
+
+    BATCH_SIZE = 1
+    MAX_MEL_FRAMES = 756
+    MEL_BINS = 128
+    class Gemma4AudioWrapper(torch.nn.Module):
+        def __init__(self, audio_tower, embed_audio):
+            super().__init__()
+            self.audio_tower = audio_tower
+            self.embed_audio = embed_audio
+
+        def forward(self, input_features, input_features_mask):
+            outputs = self.audio_tower(
+                input_features=input_features,
+                attention_mask=input_features_mask,
+                return_dict=True,
+            )
+
+            hidden_states = outputs.last_hidden_state   # [B, T, D]
+            output_mask = outputs.attention_mask        # [B, T]
+
+            hidden_states = self.embed_audio(hidden_states)
+
+            return hidden_states
+
+    audio_tower = model.model.audio_tower
+    embed_audio = model.model.embed_audio
+
+    audio_tower.eval()
+
+    wrapper = Gemma4AudioWrapper(audio_tower, embed_audio).eval()
+
+    input_features = torch.zeros(
+        BATCH_SIZE, MAX_MEL_FRAMES, MEL_BINS, dtype=torch.float32
+    )
+    input_features_mask = torch.ones(
+        BATCH_SIZE, MAX_MEL_FRAMES, dtype=torch.float32
+    )
+
+    # ====== 导出 ONNX ======
+    torch.onnx.export(
+        wrapper,
+        (input_features, input_features_mask),
+        args.export_audio_path,
+        input_names=["input_features", "input_features_mask"],
+        output_names=["hidden_states"],
+        opset_version=19,
+        do_constant_folding=True,
+    )
+
+    print(f"Exported to {os.path.abspath(args.export_audio_path)}")

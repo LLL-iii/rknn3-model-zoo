@@ -12,8 +12,7 @@ def parse_arg():
         exit(1)
 
     model_path = sys.argv[1]
-    platform = 'rk1820'
-    # platform = sys.argv[2]
+    platform = sys.argv[2]
 
     do_quant = DEFAULT_QUANT
     if len(sys.argv) > 3:

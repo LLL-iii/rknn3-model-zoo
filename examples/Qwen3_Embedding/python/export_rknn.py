@@ -13,6 +13,7 @@ if __name__ == '__main__':
     parser.add_argument("--onnx_path", type=str, help="onnx model path", required=False, default=ONNX_MODEL)
     parser.add_argument("--config", type=str, help="config file path", required=False, default=LLM_CONFIG)
     parser.add_argument("--rknn_path", type=str, help="output rknn model path", required=False, default=RKNN_MODEL)
+    parser.add_argument('--platform', type=str, default= "rk1820", help='Target platform (e.g. rk1820)')
     parser.add_argument("--dataset_path", type=str, help="model quantization dataset path", required=False, default=DATASET_PATH)
     args = parser.parse_args()
 
@@ -21,7 +22,7 @@ if __name__ == '__main__':
 
     # pre-process config
     print('--> config model')
-    rknn.config(target_platform='rk1820', 
+    rknn.config(target_platform=args.platform, 
                 quantized_dtype='w4a16', quantized_algorithm='normal', quantized_method='group32',
                 max_ctx_len=2048
                 )
@@ -37,7 +38,7 @@ if __name__ == '__main__':
 
     # Build model
     print('--> Building model')
-    rknn.build(do_quantization=True, dataset=args.dataset_path)
+    ret = rknn.build(do_quantization=True, dataset=args.dataset_path)
     if ret != 0:
         print('Build model failed!')
         exit(ret)

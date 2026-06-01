@@ -181,10 +181,17 @@ struct gguf_kv {
     template <typename T>
     const T & get_val(const size_t i = 0) const {
         GGML_ASSERT(type_to_gguf_type<T>::value == type);
+#if __cplusplus >= 201703L
         if constexpr (std::is_same<T, std::string>::value) {
             GGML_ASSERT(data_string.size() >= i+1);
             return data_string[i];
         }
+#else
+        if (std::is_same<T, std::string>::value) {
+            GGML_ASSERT(data_string.size() >= i+1);
+            return reinterpret_cast<const T &>(data_string[i]);
+        }
+#endif
         const size_t type_size = gguf_type_size(type);
         GGML_ASSERT(data.size() % type_size == 0);
         GGML_ASSERT(data.size() >= (i+1)*type_size);
@@ -230,6 +237,7 @@ struct gguf_reader {
     bool read(std::vector<T> & dst, const size_t n) const {
         dst.resize(n);
         for (size_t i = 0; i < dst.size(); ++i) {
+#if __cplusplus >= 201703L
             if constexpr (std::is_same<T, bool>::value) {
                 bool tmp;
                 if (!read(tmp)) {
@@ -241,6 +249,21 @@ struct gguf_reader {
                     return false;
                 }
             }
+#else
+            if (std::is_same<T, bool>::value) {
+                bool tmp;
+                if (!read(tmp)) {
+                    return false;
+                }
+                dst[i] = tmp;
+            } else {
+                T tmp;
+                if (!read(tmp)) {
+                    return false;
+                }
+                dst[i] = tmp;
+            }
+#endif
         }
         return true;
     }
@@ -306,6 +329,7 @@ struct gguf_buff_reader {
     bool read(std::vector<T> & dst, const size_t n) const {
         dst.resize(n);
         for (size_t i = 0; i < dst.size(); ++i) {
+#if __cplusplus >= 201703L
             if constexpr (std::is_same<T, bool>::value) {
                 bool tmp;
                 if (!read(tmp)) {
@@ -317,6 +341,21 @@ struct gguf_buff_reader {
                     return false;
                 }
             }
+#else
+            if (std::is_same<T, bool>::value) {
+                bool tmp;
+                if (!read(tmp)) {
+                    return false;
+                }
+                dst[i] = tmp;
+            } else {
+                T tmp;
+                if (!read(tmp)) {
+                    return false;
+                }
+                dst[i] = tmp;
+            }
+#endif
         }
         return true;
     }

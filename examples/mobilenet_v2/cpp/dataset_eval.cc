@@ -42,6 +42,12 @@ int main(int argc, char** argv)
     const char* data_root  = argv[3];
     uint32_t    core_mask   = strtoul(argv[4], nullptr, 16);
 
+    std::string line;
+    // Read file line by line
+    int total = 0;
+    int correct_1 = 0;
+    int correct_5 = 0;
+
     int ret;
     rknn_app_context_t rknn_app_ctx;
     memset(&rknn_app_ctx, 0, sizeof(rknn_app_context_t));
@@ -58,41 +64,40 @@ int main(int argc, char** argv)
     sprintf(label_path, "%s/ILSVRC2012_img_val_256.txt", data_root);
     std::ifstream file(label_path);
     if (!file.is_open()) {
-        std::cerr << "无法打开文件!" << std::endl;
-        return 1;
+        std::cerr << "Failed to open file!" << std::endl;
+        ret = -1;
+        goto out;
     }
 
-    std::string line;
-    // 逐行读取文件
-    int total = 0;
-    int correct_1 = 0;
-    int correct_5 = 0;
+    total = 0;
+    correct_1 = 0;
+    correct_5 = 0;
     while (std::getline(file, line)) {
-        // 查找逗号位置
+        // Find comma position
         size_t commaPos = line.find(',');
         if (commaPos == std::string::npos) {
-            std::cerr << "无效的行格式: " << line << std::endl;
+            std::cerr << "Invalid line format: " << line << std::endl;
             continue;
         }
         
-        // 提取路径（逗号前的部分）
+        // Extract path (before comma)
         std::string path = line.substr(0, commaPos);
         
-        // 提取标签（逗号后的部分），注意跳过可能的空格
+        // Extract label (after comma), skip possible spaces
         std::string labelStr = line.substr(commaPos + 1);
-        // 去除前后空格
+        // Trim leading and trailing spaces
         size_t start = labelStr.find_first_not_of(" \t");
         size_t end = labelStr.find_last_not_of(" \t");
         if (start != std::string::npos && end != std::string::npos) {
             labelStr = labelStr.substr(start, end - start + 1);
         }
         
-        // 转换为整数
+        // Convert to integer
         int label;
         try {
             label = std::stoi(labelStr);
         } catch (...) {
-            std::cerr << "无法将 " << labelStr << " 转换为整数: " << line << std::endl;
+            std::cerr << "Failed to convert " << labelStr << " to integer: " << line << std::endl;
             continue;
         }
 
@@ -102,15 +107,14 @@ int main(int argc, char** argv)
         ret = read_image(image_path, &src_image);
         if (ret != 0) {
             printf("read image fail! ret=%d image_path=%s\n", ret, image_path);
-            return -1;
+            goto out;
         }
 
         int topk = 5;
         mobilenet_result result[topk];
-
         ret = inference_mobilenet_model(&rknn_app_ctx, &src_image, result, topk);
         if (ret != 0) {
-            printf("init_mobilenet_model fail! ret=%d\n", ret);
+            printf("inference_mobilenet_model fail! ret=%d\n", ret);
             goto out;
         }
 

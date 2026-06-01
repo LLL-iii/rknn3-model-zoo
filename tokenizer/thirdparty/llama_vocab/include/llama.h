@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <set>
 
 #ifdef LLAMA_SHARED
 #    if defined(_WIN32) && !defined(__MINGW32__)
@@ -453,6 +454,7 @@ extern "C" {
     LLAMA_API llama_token llama_vocab_eos(const struct llama_vocab * vocab); // end-of-sentence
     LLAMA_API llama_token llama_vocab_eot(const struct llama_vocab * vocab); // end-of-turn
     LLAMA_API llama_token llama_vocab_eom(const struct llama_vocab * vocab); // end-of-message
+    LLAMA_API std::set<llama_token> llama_vocab_eog(const struct llama_vocab * vocab); // end-of-generation
     LLAMA_API llama_token llama_vocab_sep(const struct llama_vocab * vocab); // sentence separator
     LLAMA_API llama_token llama_vocab_nl (const struct llama_vocab * vocab); // next-line
     LLAMA_API llama_token llama_vocab_pad(const struct llama_vocab * vocab); // padding

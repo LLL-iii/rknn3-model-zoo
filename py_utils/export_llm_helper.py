@@ -60,15 +60,28 @@ def causal_llm_to_onnx(model, args):
     attention_mask = torch.ones((1, in_len), dtype=torch.float)
     position_ids = torch.arange(0, in_len, dtype=torch.long).unsqueeze(0)
 
+    if hasattr(args, 'arch') and args.arch == "Qwen3-ASR":
+        dummy_input = torch.zeros((1, in_len, args.hidden_size), dtype=torch.float)
+        position_ids = torch.zeros((1, 1, in_len), dtype=torch.long)
+
     inputs = (dummy_input, attention_mask, position_ids)
     input_names = ["input_ids", "attention_mask", "position_ids"]
+    if hasattr(args, 'arch') and args.arch == "Qwen3-ASR":
+        input_names = ["input_embeds", "attention_mask", "position_ids"]
     dynamic_axes = {}
     if args.dynamic_shape:
-        dynamic_axes.update({
-            'input_ids': {1: 'sequence'},
-            'attention_mask': {1: 'sequence'},
-            'position_ids': {1: 'sequence'},
-        })
+        if hasattr(args, 'arch') and args.arch == "Qwen3-ASR":
+            dynamic_axes.update({
+                'input_embeds': {1: 'sequence'},
+                'attention_mask': {1: 'sequence'},
+                'position_ids': {2: 'sequence'},
+            })
+        else:
+            dynamic_axes.update({
+                'input_ids': {1: 'sequence'},
+                'attention_mask': {1: 'sequence'},
+                'position_ids': {1: 'sequence'},
+            })
 
     # 获取 forward 参数
     forward_args = model.forward.__code__.co_varnames

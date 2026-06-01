@@ -1,0 +1,4 @@
+wget -O vits_ljs_step1_slid.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/vits/vits_ljs_step1_slid.onnx
+wget -O vits_ljs_step2_slid.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/vits/vits_ljs_step2_slid.onnx
+wget -O vits_vctk_step1_slid.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/vits/vits_vctk_step1_slid.onnx
+wget -O vits_vctk_step2_slid.onnx https://ftrg.zbox.filez.com/v2/delivery/data/95f00b0fc900458ba134f8b180b3f7a1/examples/vits/vits_vctk_step2_slid.onnx

@@ -78,6 +78,24 @@ python export_rknn.py \
 
 C++ 推理代码已实现模型格式自动识别，无需修改代码即可兼容裁剪版与完整版模型。
 
+C++ demo 保持原有命令行参数兼容；如需启用 SpeedUP，可在命令末尾增加可选参数
+`speedup_ratio`：
+
+```bash
+./rknn_qwen3_vl_demo \
+    <vision_model_path> <vision_weight_path> \
+    <llm_model_path> <llm_weight_path> \
+    <tokenizer_path> <embedding_path> \
+    <vision_core_mask> <llm_core_mask> \
+    <image_path> <prompt> \
+    [model_width model_height] [speedup_ratio]
+```
+
+`speedup_ratio` 取值说明：
+- `1.0`：自动模式。
+- `0.0`：关闭 SpeedUP。
+- `(0.0, 1.0)`：手动模式。
+
 若修改了 Vision 模型的分辨率，需同步调整 `rknn_qwen3_vl_vision.h` 中的参数：
 
 ```cpp

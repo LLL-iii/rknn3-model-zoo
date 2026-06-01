@@ -11,7 +11,9 @@ if __name__ == '__main__':
     parser = ArgumentParser(description="Export Qwen2.5-Omni-3B vision to RKNN model") 
     parser.add_argument("--onnx_path", type=str, help="onnx model path", required=False, default=ONNX_MODEL)
     parser.add_argument("--rknn_path", type=str, help="output rknn model path", required=False, default=RKNN_MODEL)
+    parser.add_argument('--platform', type=str, default= "rk1820", help='Target platform (e.g. rk1820)')
     parser.add_argument("--dataset_path", type=str, help="model quantization dataset path", required=False, default=DATASET_PATH)
+    parser.add_argument('--core_num', type=int, default=8, help='core_num (1-8)')
     args = parser.parse_args()
 
     # Create RKNN object
@@ -19,8 +21,8 @@ if __name__ == '__main__':
 
     # pre-process config
     print('--> config model')
-    rknn.config(target_platform='rk1820', 
-                quantized_dtype='w4a16', quantized_algorithm='normal', quantized_method='group32', core_num=8,
+    rknn.config(target_platform=args.platform, 
+                quantized_dtype='w4a16', quantized_algorithm='normal', quantized_method='group32', core_num=args.core_num,
                 mean_values=[[0.48145466 * 255, 0.4578275 * 255, 0.40821073 * 255]],
                 std_values=[[0.26862954 * 255, 0.26130258 * 255, 0.27577711 * 255]],
                 input_attrs={'pixel': {'dtype': 'uint8', 'layout': 'NHWC'}},
@@ -37,7 +39,7 @@ if __name__ == '__main__':
 
     # Build model
     print('--> Building model')
-    rknn.build(do_quantization=True, dataset=args.dataset_path)
+    ret = rknn.build(do_quantization=True, dataset=args.dataset_path)
     if ret != 0:
         print('Build model failed!')
         exit(ret)

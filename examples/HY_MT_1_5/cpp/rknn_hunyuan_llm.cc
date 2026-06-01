@@ -42,6 +42,7 @@ int init_hunyuan_llm(rknn_hunyuan_llm_context* llm_ctx, const char* model_path, 
     ret = rknn3_load_model_from_path(ctx, model_path, weight_path);
     if (ret < 0) {
         printf("rknn_load_model failed! ret=%d\n", ret);
+        rknn3_destroy(ctx);
         return ret;
     }
 
@@ -49,6 +50,7 @@ int init_hunyuan_llm(rknn_hunyuan_llm_context* llm_ctx, const char* model_path, 
     ret = rknn3_model_init(ctx, &config);
     if (ret < 0) {
         printf("rknn_model_init failed! ret=%d\n", ret);
+        rknn3_destroy(ctx);
         return ret;
     }
 
@@ -57,6 +59,7 @@ int init_hunyuan_llm(rknn_hunyuan_llm_context* llm_ctx, const char* model_path, 
     if (!session)
     {
         printf("Failed to initialize test session\n");
+        rknn3_destroy(ctx);
         return -1;
     }
 
@@ -65,6 +68,8 @@ int init_hunyuan_llm(rknn_hunyuan_llm_context* llm_ctx, const char* model_path, 
     if (ret < 0)
     {
         printf("Failed to set chat template\n");
+        rknn3_session_destroy(session);
+        rknn3_destroy(ctx);
         return -1;
     }
 
@@ -73,6 +78,8 @@ int init_hunyuan_llm(rknn_hunyuan_llm_context* llm_ctx, const char* model_path, 
     if (ret < 0)
     {
         printf("Failed to set callback\n");
+        rknn3_session_destroy(session);
+        rknn3_destroy(ctx);
         return -1;
     }
 

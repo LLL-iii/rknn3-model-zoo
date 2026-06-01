@@ -1062,6 +1062,9 @@ class TextModel(ModelBase):
         if chkhsh == "9d70134b369a70e5735009b6de918f7581b5211f7c074d1f89f753aea8248af1":
             # ref: https://huggingface.co/tencent/Youtu-LLM-2B
             res = "youtu"
+        if chkhsh == "d30d75d9059f1aa2c19359de71047b3ae408c70875e8a3ccf8c5fba56c9d8af4":
+            # ref: https://huggingface.co/Qwen/Qwen3.5-9B-Instruct
+            res = "qwen35"
 
         if res is None:
             logger.warning("\n")
@@ -3405,7 +3408,7 @@ class LLaDAModel(TextModel):
         yield from super().modify_tensors(data_torch, name, bid)
 
 
-@ModelBase.register("Ernie4_5_ForCausalLM", "Ernie4_5ForCausalLM")
+@ModelBase.register("Ernie4_5_ForCausalLM", "Ernie4_5ForCausalLM", "PaddleOCRVLForConditionalGeneration")
 class Ernie4_5Model(TextModel):
     model_arch = gguf.MODEL_ARCH.ERNIE4_5
 
@@ -3420,6 +3423,10 @@ class Ernie4_5Model(TextModel):
         num_kv_heads = self.hparams["num_key_value_heads"]
         if (head_dim := self.hparams.get("head_dim")) is None:
             head_dim = self.hparams["hidden_size"] // num_heads
+
+        if "mlp_AR" in name or "vision_model" in name:
+            # skip vision model and projector tensors
+            return []
 
         if "ernie." in name:
             name = name.replace("ernie.", "model.")
@@ -4228,6 +4235,17 @@ class Qwen3VLMoeTextModel(Qwen3MoeModel):
             return []
         
         return super().modify_tensors(data_torch, name, bid)
+
+@ModelBase.register("Qwen3_5ForConditionalGeneration", "Qwen3_5ForCausalLM")
+class Qwen3_5TextModel(Qwen2MoeModel):
+    model_arch = gguf.MODEL_ARCH.QWEN35
+
+
+@ModelBase.register("Qwen3_5MoeForConditionalGeneration", "Qwen3_5MoeForCausalLM")
+class Qwen3_5MoeTextModel(Qwen2MoeModel):
+    model_arch = gguf.MODEL_ARCH.QWEN35MOE
+
+
 
 
 @ModelBase.register("GPT2LMHeadModel")
@@ -5870,6 +5888,57 @@ class Gemma3NModel(Gemma3Model):
                 return []
 
         return super().modify_tensors(data_torch, name, bid)
+
+
+@ModelBase.register("Gemma4ForConditionalGeneration")
+class Gemma4Model(Gemma3Model):
+    model_arch = gguf.MODEL_ARCH.GEMMA4
+
+    def norm_shift(self, name: str) -> float:
+        del name # unused
+        return 0.0
+
+    def set_vocab(self):
+        vocab = gguf.LlamaHfVocab(self.dir_model)
+        tokens = []
+        scores = []
+        toktypes = []
+        visible_tokens = {"<|channel>", "<channel|>", "<|tool_call>", "<tool_call|>", "<|tool_response>", "<tool_response|>", "<|\"|>"}
+
+        for text, score, toktype in vocab.all_tokens():
+            tokens.append(text)
+            scores.append(score)
+            text_str = text.decode()
+            if text_str in visible_tokens:
+                # always render these tokens, so that the chat parser can read them
+                toktypes.append(gguf.TokenType.USER_DEFINED)
+                logger.info(f"Token '{text_str}' is set to USER_DEFINED")
+            else:
+                toktypes.append(toktype)
+
+        assert len(tokens) == vocab.vocab_size
+
+        self.gguf_writer.add_tokenizer_model("gemma4")
+        self.gguf_writer.add_token_list(tokens)
+        self.gguf_writer.add_token_scores(scores)
+        self.gguf_writer.add_token_types(toktypes)
+
+        special_vocab = gguf.SpecialVocab(self.dir_model, load_merges=True)
+        special_vocab.add_to_gguf(self.gguf_writer)
+        self.gguf_writer.add_add_space_prefix(False)
+        self.gguf_writer.add_add_bos_token(True)
+
+
+@ModelBase.register("Gemma4ForConditionalGeneration")
+class Gemma4VisionAudioModel(MmprojModel):
+    has_audio_encoder = True
+    has_vision_encoder = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        assert self.hparams_vision is not None
+        self.hparams_vision["image_size"] = 224 # unused, but set to avoid error
+
 
 
 @ModelBase.register("Starcoder2ForCausalLM")

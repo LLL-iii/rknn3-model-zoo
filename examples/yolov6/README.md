@@ -86,6 +86,13 @@
 
 下载完成后，参考其中的导出文档，按照步骤进行操作，即可生成适配 RK182x 的优化 ONNX 模型。
 
+## 模型转换
+```bash
+cd python
+python convert.py ../model/yolov6n_rknn3.onnx RK1820 i8 
+```
+注意：由于坐标解码部分不适合量化因此`convert.py`采用了混合量化模式，具体配置在`rknn.config()`的`subgraph_dtype_target`参数，详细定义见《Rockchip_RKNPU3_API_Reference_RKNN3_Toolkit》
+
 ## C++ 示例编译和运行
 
 ### 编译准备

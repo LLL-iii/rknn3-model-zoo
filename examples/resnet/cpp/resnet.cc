@@ -110,6 +110,26 @@ static void softmax_fp(float* array, int size) {
     }
 }
 
+static int convert_int8_to_fp32(const void *src, float *dst, int n_elems, float scale, int32_t zero_point)
+{
+
+    for (int i = 0; i < n_elems; i++)
+    {
+        dst[i] = ((float)((int8_t *)src)[i] - zero_point) * scale;
+    }
+
+    return 0;
+}
+
+static int convert_fp16_to_fp32(const float16* src, float* dst, int n_elems)
+{
+    for (int i = 0; i < n_elems; i++)
+    {
+        dst[i] = fp16_to_fp32(src[i]);
+    }
+    return 0;
+}
+
 static void softmax_i8(int8_t* array, int size, float scale, int32_t zp, float* outputs) {
     // Find the maximum value after dequantization
     float max_val = deqnt_i8_to_f32(array[0], zp, scale);
@@ -136,7 +156,7 @@ static void softmax_i8(int8_t* array, int size, float scale, int32_t zp, float* 
 
 static void get_topk_with_indices(float arr[], int size, int k, resnet_result* result) {
 
-    // Create an array of elements, saving values ​​and index numbers
+    // Create an array of elements, saving values and index numbers
     element_t* elements = (element_t*)malloc(size * sizeof(element_t));
     for (int i = 0; i < size; i++) {
         elements[i].value = arr[i];
@@ -146,7 +166,7 @@ static void get_topk_with_indices(float arr[], int size, int k, resnet_result* r
     // Quick sort an array of elements
     quick_sort(elements, 0, size - 1);
 
-    // Get the top K maximum values ​​and their index numbers
+    // Get the top K maximum values and their index numbers
     for (int i = 0; i < k; i++) {
         result[i].score = elements[i].value;
         result[i].cls = elements[i].index;
@@ -171,7 +191,7 @@ int init_resnet_model(const char* model_path, const char* weight_path, rknn_app_
     ret = rknn3_init(&ctx, NULL);
     if (ret < 0)
     {
-        printf("rknn_init fail ret=%d\n", ret);
+        printf("rknn3_init fail ret=%d\n", ret);
         return ret;
     }
 
@@ -180,13 +200,15 @@ int init_resnet_model(const char* model_path, const char* weight_path, rknn_app_
     if (ret < 0)
     {
         printf("load_model fail!\n");
+        rknn3_destroy(ctx);
         return -1;
     }
 
     //Init RKNN Model
     ret = rknn3_model_init(ctx, &config);
     if (ret < 0) {
-        printf("rknn_model_init failed! ret=%d\n", ret);
+        printf("rknn3_model_init failed! ret=%d\n", ret);
+        rknn3_destroy(ctx);
         return ret;
     }
 
@@ -195,7 +217,8 @@ int init_resnet_model(const char* model_path, const char* weight_path, rknn_app_
     ret = rknn3_query(ctx, RKNN3_QUERY_IN_OUT_NUM, &io_num, sizeof(io_num));
     if (ret < 0)
     {
-        printf("rknn_query fail! ret=%d\n", ret);
+        printf("rknn3_query fail! ret=%d\n", ret);
+        rknn3_destroy(ctx);
         return ret;
     }
     printf("model input num: %d, output num: %d\n", io_num.n_input, io_num.n_output);
@@ -210,7 +233,8 @@ int init_resnet_model(const char* model_path, const char* weight_path, rknn_app_
         ret = rknn3_query(ctx, RKNN3_QUERY_INPUT_ATTR, &(input_attrs[i]), sizeof(rknn3_tensor_attr));
         if (ret < 0)
         {
-            printf("rknn_query fail! ret=%d\n", ret);
+            printf("rknn3_query fail! ret=%d\n", ret);
+            rknn3_destroy(ctx);
             return ret;
         }
         dump_tensor_attr(&(input_attrs[i]));
@@ -225,7 +249,8 @@ int init_resnet_model(const char* model_path, const char* weight_path, rknn_app_
         ret = rknn3_query(ctx, RKNN3_QUERY_OUTPUT_ATTR, &(output_attrs[i]), sizeof(rknn3_tensor_attr));
         if (ret < 0)
         {
-            printf("rknn_query fail! ret=%d\n", ret);
+            printf("rknn3_query fail! ret=%d\n", ret);
+            rknn3_destroy(ctx);
             return ret;
         }
         dump_tensor_attr(&(output_attrs[i]));
@@ -278,6 +303,10 @@ int init_resnet_model(const char* model_path, const char* weight_path, rknn_app_
 
 int release_resnet_model(rknn_app_context_t* app_ctx)
 {
+    if (app_ctx == NULL || app_ctx->rknn_ctx == 0)
+    {
+        return -1;
+    }
     for (int i = 0; i < app_ctx->io_num.n_input; i++) {
         if (app_ctx->inputs && app_ctx->inputs[i].mem) {
             rknn3_destroy_mem(app_ctx->rknn_ctx, app_ctx->inputs[i].mem);
@@ -316,6 +345,8 @@ int inference_resnet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_img,
 {
     int ret = 0;
     image_buffer_t img;
+    size_t dst_elems = 1;
+    float *output_data = NULL;
 
     memset(&img, 0, sizeof(image_buffer_t));
 
@@ -333,7 +364,8 @@ int inference_resnet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_img,
     ret = convert_image(src_img, &img, NULL, NULL, 0);
     if (ret < 0) {
         printf("convert_image fail! ret=%d\n", ret);
-        return -1;
+        ret = -1;
+        goto out;
     }
 
     // Set Input Data
@@ -352,9 +384,9 @@ int inference_resnet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_img,
 
     // Run
     ret = rknn3_run(app_ctx->rknn_ctx, app_ctx->inputs, app_ctx->io_num.n_input, app_ctx->outputs, app_ctx->io_num.n_output);
-    if (ret < 0)
+    if (ret != RKNN3_SUCCESS)
     {
-        printf("rknn_run fail! ret=%d\n", ret);
+        printf("rknn3_run fail! ret=%d\n", ret);
         goto out;
     }
 
@@ -369,17 +401,56 @@ int inference_resnet_model(rknn_app_context_t* app_ctx, image_buffer_t* src_img,
         }
     }
 
-    if (app_ctx->is_quant) {
-        float res[app_ctx->outputs[0].attr->n_elems];
-        softmax_i8((int8_t*)app_ctx->outputs[0].mem->virt_addr, app_ctx->outputs[0].attr->n_elems, app_ctx->outputs[0].attr->qnt_info.scale, app_ctx->outputs[0].attr->qnt_info.zero_point, res);
-        get_topk_with_indices(res, app_ctx->outputs[0].attr->n_elems, topk, out_result);
-    }
-    else {
-        softmax_fp((float*)app_ctx->outputs[0].mem->virt_addr, app_ctx->outputs[0].attr->n_elems);
-        get_topk_with_indices((float*)app_ctx->outputs[0].mem->virt_addr, app_ctx->outputs[0].attr->n_elems, topk, out_result);
+    for (uint32_t j = 0; j < app_ctx->outputs[0].attr->n_dims; j++)
+    {
+        dst_elems *= app_ctx->outputs[0].attr->shape[j];
     }
 
+    output_data = (float *)malloc(dst_elems * sizeof(float));
+    if (output_data == NULL)
+    {
+        printf("Failed to allocate memory for output_data\n");
+        ret = -1;
+        goto out;
+    }
+
+    if (app_ctx->outputs[0].attr->layout == RKNN3_TENSOR_NCHW || app_ctx->outputs[0].attr->layout == RKNN3_TENSOR_UNDEFINED)
+    {
+        if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_INT8)
+        {
+            float scale = app_ctx->outputs[0].attr->qnt_info.scale;
+            int32_t zero_point = app_ctx->outputs[0].attr->qnt_info.zero_point;
+            convert_int8_to_fp32(app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems, scale, zero_point);
+        }
+        else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT16)
+        {
+            convert_fp16_to_fp32((const float16 *)app_ctx->outputs[0].mem->virt_addr, output_data, dst_elems);
+        }
+        else if (app_ctx->outputs[0].attr->dtype == RKNN3_TENSOR_FLOAT32)
+        {
+            memcpy(output_data, app_ctx->outputs[0].mem->virt_addr, dst_elems * sizeof(float));
+        }
+        else
+        {
+            printf("Unsupported type for NCHW format: %s\n", rknn3_get_type_string(app_ctx->outputs[0].attr->dtype));
+            goto out;
+        }
+    }
+    else
+    {
+        printf("Unsupported output format: %s\n", rknn3_get_layout_string(app_ctx->outputs[0].attr->layout));
+        goto out;
+    }
+
+    softmax_fp(output_data, app_ctx->outputs[0].attr->n_elems);
+    get_topk_with_indices(output_data, app_ctx->outputs[0].attr->n_elems, topk, out_result);
+
 out:
+    if (output_data != NULL)
+    {
+        free(output_data);
+        output_data = NULL;
+    }
     if (img.virt_addr != NULL)
     {
         free(img.virt_addr);

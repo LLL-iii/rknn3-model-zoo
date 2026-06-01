@@ -73,6 +73,29 @@ bool LlamaTokenizer::GetVocabInfo(VocabInfo* vocab_info) {
         if (special_eos[i] != LLAMA_TOKEN_NULL) {
             vocab_info->special_eos_id[vocab_info->n_special_eos_id] = special_eos[i];
             ++(vocab_info->n_special_eos_id);
+            printf("%s: special_eos_id[%d] = %d\n", __func__, vocab_info->n_special_eos_id, special_eos[i]);
+        }
+    }
+
+    // 补充 eog 的 token
+    std::set<llama_token> special_eog = llama_vocab_eog(mVocab);
+    for (auto token : special_eog)
+    {
+        // 只有当 token 不在 special_eos_id 中时才添加
+        bool exists = false;
+        for (int j = 0; j < vocab_info->n_special_eos_id; ++j)
+        {
+            if (vocab_info->special_eos_id[j] == token)
+            {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists)
+        {
+            vocab_info->special_eos_id[vocab_info->n_special_eos_id] = token;
+            ++(vocab_info->n_special_eos_id);
+            printf("%s: special_eog_id[%d] = %d\n", __func__, vocab_info->n_special_eos_id, token);
         }
     }
 
@@ -90,25 +113,26 @@ int LlamaTokenizer::Tokenize(const char* text, int32_t text_len, int32_t* tokens
         return -1;
     }
 
-    // Convert input text to string
-    std::string input(text, text_len);
-
     // Get tokenization settings from vocab
     // const bool add_bos = llama_vocab_get_add_bos(mVocab);
     // const bool add_eos = llama_vocab_get_add_eos(mVocab);
     const bool add_special = true;
     const bool parse_special = true;
 
-    // Tokenize the input text
-    std::vector<llama_token> token_vec = common_tokenize(mVocab, input, add_special, parse_special);
+    // Avoid building a temporary std::string and a temporary std::vector in
+    // common_tokenize(). llama_tokenize() writes directly to the caller buffer
+    // and the llama_vocab char* path reuses thread-local scratch buffers.
+    const int n_tokens = llama_tokenize(
+        mVocab,
+        text,
+        text_len,
+        reinterpret_cast<llama_token *>(tokens),
+        n_tokens_max,
+        add_special,
+        parse_special);
 
-    // Copy tokens to output buffer up to max size
-    const int n_tokens = std::min((int32_t)token_vec.size(), n_tokens_max);
-    if (n_tokens_max < n_tokens) {
-        LOG_E("Warning: n_tokens_max is smaller than output token size.\n");
-    }
-    for (int i = 0; i < n_tokens; i++) {
-        tokens[i] = token_vec[i];
+    if (n_tokens < 0) {
+        LOG_E("Warning: n_tokens_max is smaller than output token size, required=%d.\n", -n_tokens);
     }
 
     return n_tokens;

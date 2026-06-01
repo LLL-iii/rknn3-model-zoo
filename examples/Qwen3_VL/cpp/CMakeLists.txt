@@ -29,6 +29,7 @@ set(vision_file vision/rknn_qwen3_vl_vision.cc)
 message(STATUS "LIBRKNNAPI = ${LIBRKNNAPI}")
 message(STATUS "LIBRKNNAPI_INCLUDES = ${LIBRKNNAPI_INCLUDES}")
 message(STATUS "TARGET_LIB_ARCH = ${TARGET_LIB_ARCH}")
+message(STATUS "SPEEDUP_LIB = ${SPEEDUP_LIB}")
 
 add_executable(${PROJECT_NAME}
     main.cc
@@ -37,12 +38,22 @@ add_executable(${PROJECT_NAME}
     ${vision_file}
 )
 
+if(EXISTS "${SPEEDUP_LIB}" AND EXISTS "${SPEEDUP_INCLUDES}/speedup.h")
+    message(STATUS "Found SpeedUP = ${SPEEDUP_LIB}")
+    install(PROGRAMS ${SPEEDUP_LIB} DESTINATION lib)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE ENABLE_SPEEDUP)
+else()
+    message(WARNING "SpeedUP not found, build without SpeedUP support")
+    set(SPEEDUP_LIB "")
+endif()
+
 target_link_libraries(${PROJECT_NAME}
     timeutils
 	imageutils
     fileutils
     ${LIBRKNNAPI}
     ${LIBTOKENIZER}
+    ${SPEEDUP_LIB}
     dl
 )
 
@@ -62,6 +73,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${LIBRKNNAPI_INCLUDES}
     ${LIBTOKENIZER_INCLUDES}
+    ${SPEEDUP_INCLUDES}
 )
 
 install(TARGETS ${PROJECT_NAME} DESTINATION .)

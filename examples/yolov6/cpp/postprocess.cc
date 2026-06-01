@@ -23,7 +23,7 @@
 
 #include <set>
 #include <vector>
-#define LABEL_NALE_TXT_PATH "./model/coco_80_labels_list.txt"
+#define LABEL_NAME_TXT_PATH "./model/coco_80_labels_list.txt"
 
 static char *labels[OBJ_CLASS_NUM];
 
@@ -91,7 +91,7 @@ static int readLines(const char *fileName, char *lines[], int max_line)
 
 static int loadLabelName(const char *locationFilename, char *label[])
 {
-    printf("load lable %s\n", locationFilename);
+    printf("load label %s\n", locationFilename);
     readLines(locationFilename, label, OBJ_CLASS_NUM);
     return 0;
 }
@@ -402,13 +402,16 @@ int post_process_after_exYoloPostProcess(rknn_app_context_t *app_ctx, void *outp
         float score = outputfp32[i*6];
         if(score > 0)
         {
-            float class_idx = outputfp32[i*6 + 1];
+            if (last_count >= OBJ_NUM_MAX_SIZE)
+            {
+                break;
+            }
             float x1 = outputfp32[i*6 + 2] - letter_box->x_pad;
             float y1 = outputfp32[i*6 + 3] - letter_box->y_pad;
             float x2 = outputfp32[i*6 + 4] - letter_box->x_pad;
-            float y2 = outputfp32[i*6 + 5] - letter_box->y_pad;;
-            
-     
+            float y2 = outputfp32[i*6 + 5] - letter_box->y_pad;
+
+
             int id = outputfp32[i*6 + 1];
             float obj_conf = score;
 
@@ -489,15 +492,19 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
                                      filterBoxes, objProbs, classId, conf_threshold);
         }
         else
-        {   
+        {
             float *box_tensor = nullptr;
             float *score_tensor = nullptr;
             float *score_sum_tensor = nullptr;
+            bool box_tensor_allocated = false;
+            bool score_tensor_allocated = false;
+            bool score_sum_tensor_allocated = false;
 
             //convert box from fp16 to fp32
             if(_outputs[box_idx].attr->dtype == RKNN3_TENSOR_FLOAT16){
                 int size = getTensorSize(_outputs[box_idx]);
                 box_tensor = (float*) malloc(size * sizeof(float));
+                box_tensor_allocated = true;
                 convert_fp16_to_fp32((float16*)_outputs[box_idx].mem->virt_addr, box_tensor, size);
             }
             else {
@@ -508,6 +515,7 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
             if(_outputs[score_idx].attr->dtype == RKNN3_TENSOR_FLOAT16){
                 int size = getTensorSize(_outputs[score_idx]);
                 score_tensor = (float*) malloc(size * sizeof(float));
+                score_tensor_allocated = true;
                 convert_fp16_to_fp32((float16*)_outputs[score_idx].mem->virt_addr, score_tensor, size);
             }
             else {
@@ -520,6 +528,7 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
                 if(_outputs[sum_idx].attr->dtype == RKNN3_TENSOR_FLOAT16){
                     int size = getTensorSize(_outputs[sum_idx]);
                     score_sum_tensor = (float*) malloc(size * sizeof(float));
+                    score_sum_tensor_allocated = true;
                     convert_fp16_to_fp32((float16*)_outputs[sum_idx].mem->virt_addr, score_sum_tensor, size);
                 }
                 else {
@@ -527,16 +536,16 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
                 }
 
             }
-            
+
             validCount += process_fp32(box_tensor, score_tensor, score_sum_tensor,
-                                       grid_h, grid_w, stride, dfl_len, 
+                                       grid_h, grid_w, stride, dfl_len,
                                        filterBoxes, objProbs, classId, conf_threshold);
-            if(dtype == RKNN3_TENSOR_FLOAT16)
-            {
+            if (box_tensor_allocated)
                 free(box_tensor);
+            if (score_tensor_allocated)
                 free(score_tensor);
+            if (score_sum_tensor_allocated)
                 free(score_sum_tensor);
-            }
         }
     }
 
@@ -566,7 +575,7 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
     /* box valid detect target */
     for (int i = 0; i < validCount; ++i)
     {
-        if (indexArray[i] == -1 || last_count >= OBJ_NUMB_MAX_SIZE)
+        if (indexArray[i] == -1 || last_count >= OBJ_NUM_MAX_SIZE)
         {
             continue;
         }
@@ -594,10 +603,10 @@ int post_process(rknn_app_context_t *app_ctx, void *outputs, letterbox_t *letter
 int init_post_process()
 {
     int ret = 0;
-    ret = loadLabelName(LABEL_NALE_TXT_PATH, labels);
+    ret = loadLabelName(LABEL_NAME_TXT_PATH, labels);
     if (ret < 0)
     {
-        printf("Load %s failed!\n", LABEL_NALE_TXT_PATH);
+        printf("Load %s failed!\n", LABEL_NAME_TXT_PATH);
         return -1;
     }
     return 0;

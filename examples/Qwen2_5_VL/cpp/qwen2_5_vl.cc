@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <algorithm>
 
 #include "qwen2_5_vl.h"
 #include "common.h"
@@ -22,6 +23,14 @@
 #include "rknn3_api.h"
 #include "time_utils.h"
 
+#ifdef ENABLE_SPEEDUP
+static const SpeedUPConfig g_speedup_config = {
+    .tau = 0.95f,
+    .min_ratio = 0.7f,
+    .max_ratio = 0.8f,
+    .stride = 16
+};
+#endif
 
 int init_internal_share(rknn_app_context_t* app_ctx, uint32_t core_mask_vision, uint32_t core_mask_llm)
 {
@@ -118,8 +127,6 @@ int init_internal_share(rknn_app_context_t* app_ctx, uint32_t core_mask_vision, 
         if (!internal_mems_vision[i]) {
             return -1;
         }
-        printf("Created user internal memory for core %d: size=%lu, virt_addr=%p, phys_addr=0x%lx\n", core_mem_sizes_vision[i].core_id,
-                internal_mems_vision[i]->size, internal_mems_vision[i]->virt_addr, internal_mems_vision[i]->phys_addr);
         app_ctx->internal_mems[idx++] = internal_mems_vision[i];
     }
     for (uint32_t i = 0; i < core_num_llm; i++) {
@@ -131,9 +138,7 @@ int init_internal_share(rknn_app_context_t* app_ctx, uint32_t core_mask_vision, 
         if (!internal_mems_llm[i]) {    // 都使用vision.rknn_ctx分配, 方便后面释放
             return -1;
         }
-        printf("Created user internal memory for core %d: size=%lu, virt_addr=%p, phys_addr=0x%lx\n", core_mem_sizes_llm[i].core_id,
-                internal_mems_llm[i]->size, internal_mems_llm[i]->virt_addr, internal_mems_llm[i]->phys_addr);
-        app_ctx->internal_mems[idx++] = internal_mems_vision[i];
+        app_ctx->internal_mems[idx++] = internal_mems_llm[i];
     }
 
     ret = rknn3_set_internal_mem(app_ctx->vision.rknn_ctx, internal_mems_vision, core_num_vision);
@@ -157,7 +162,6 @@ int init_internal_share(rknn_app_context_t* app_ctx, uint32_t core_mask_vision, 
 
 int release_internal_share(rknn_app_context_t* app_ctx)
 {
-
     if (app_ctx->internal_mems) {
         for (int i = 0; i < app_ctx->n_internal_mems; i++) {
             if (app_ctx->internal_mems[i]) {
@@ -172,34 +176,64 @@ int release_internal_share(rknn_app_context_t* app_ctx)
     return 0;
 }
 
-
-
-
 int init_qwen2_5_vl_model(rknn_app_context_t* app_ctx, const char* llm_model_path, const char* llm_weight_path, const char* vision_model_path, const char* vision_weight_path, rknn3_llm_param* params, int n_params, RKLLMCallback callback, uint32_t vision_core_mask, uint32_t llm_core_mask)
 {
     int ret = 0;
 
+#ifdef ENABLE_SPEEDUP
+    app_ctx->speedup = NULL;
+#endif
+
     printf("--> init qwen2_5_vl vision model\n");
     ret = init_qwen2_5_vl_vision(&(app_ctx->vision), vision_model_path, vision_weight_path, vision_core_mask, app_ctx->model_width, app_ctx->model_height);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         printf("rknn_init qwen2_5_vl vision model fail! ret=%d\n", ret);
         return ret;
     }
 
     printf("--> init qwen2_5_vl llm model\n");
     ret = init_qwen2_5_vl_llm(&(app_ctx->llm), llm_model_path, llm_weight_path, params, n_params, callback, llm_core_mask);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         printf("rknn_init qwen2_5_vl llm model fail! ret=%d\n", ret);
+        release_qwen2_5_vl_vision(&(app_ctx->vision));
         return ret;
     }
 
+#ifdef ENABLE_SPEEDUP
+    app_ctx->base_callback = callback;
+    app_ctx->speedup = speedup_create(&g_speedup_config);
+    if (!app_ctx->speedup) {
+        printf("[SpeedUP] create failed during init\n");
+        release_qwen2_5_vl_llm(&(app_ctx->llm));
+        release_qwen2_5_vl_vision(&(app_ctx->vision));
+        return -1;
+    }
+    ret = speedup_attach_mrope_callback(app_ctx->speedup,
+                                             app_ctx->llm.rknn_ctx,
+                                             app_ctx->llm.rknn_sess,
+                                             &app_ctx->base_callback);
+    if (ret != 0) {
+        printf("[SpeedUP] attach persistent input_callback failed, ret=%d; fallback to normal inference without SpeedUP\n", ret);
+        speedup_destroy(app_ctx->speedup);
+        app_ctx->speedup = NULL;
+    } else {
+        printf("[SpeedUP] persistent input_callback attached, version=%s\n",
+               speedup_get_version());
+    }
+#endif
+
     printf("--> init internal share\n");
     ret = init_internal_share(app_ctx, vision_core_mask, llm_core_mask);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         printf("qwen2_5_vl llm/vision internal memeory share fail! ret=%d\n", ret);
+#ifdef ENABLE_SPEEDUP
+        if (app_ctx->speedup) {
+            speedup_cleanup(app_ctx->speedup, app_ctx->llm.rknn_sess);
+            app_ctx->speedup = NULL;
+        }
+#endif
+        release_qwen2_5_vl_llm(&(app_ctx->llm));
+        release_qwen2_5_vl_vision(&(app_ctx->vision));
         return ret;
     }
 
@@ -208,19 +242,31 @@ int init_qwen2_5_vl_model(rknn_app_context_t* app_ctx, const char* llm_model_pat
 
 int release_qwen2_5_vl_model(rknn_app_context_t* app_ctx)
 {
+#ifdef ENABLE_SPEEDUP
+    if (app_ctx->speedup) {
+        speedup_cleanup(app_ctx->speedup, app_ctx->llm.rknn_sess);
+        app_ctx->speedup = NULL;
+    }
+#endif
     release_internal_share(app_ctx);
     release_qwen2_5_vl_vision(&(app_ctx->vision));
     release_qwen2_5_vl_llm(&(app_ctx->llm));
     return 0;
 }
 
-int inference_qwen2_5_vl_model(rknn_app_context_t* app_ctx, image_buffer_t* img, float16* img_embeds, rknn3_llm_multimodal_tensor tensor, int n_inputs, rknn_perf_metrics_t* perf)
+int inference_qwen2_5_vl_model(
+    rknn_app_context_t* app_ctx,
+    image_buffer_t* img,
+    float16* img_embeds,
+    rknn3_llm_multimodal_tensor tensor,
+    int n_inputs,
+    rknn_perf_metrics_t* perf,
+    float speedup_ratio)
 {
     int ret;
 
-    if ((!app_ctx) || (!img))
-    {
-        printf("app_ctx or img is NULL");
+    if ((!app_ctx) || (!img)) {
+        printf("app_ctx or img is NULL\n");
         return -1;
     }
 
@@ -228,18 +274,38 @@ int inference_qwen2_5_vl_model(rknn_app_context_t* app_ctx, image_buffer_t* img,
     int start_us = getCurrentTimeUs();
     ret = inference_qwen2_5_vl_vision(&(app_ctx->vision), img, img_embeds);
     perf->vision_latency = getCurrentTimeUs() - start_us;
-    if (ret != 0)
-    {
+    if (ret != 0) {
         printf("inference qwen2_5_vl vision model fail! ret=%d\n", ret);
         return ret;
     }
 
-    printf("--> inference qwen2_5_vl llm model\n");  
-    ret = inference_qwen2_5_vl_llm(&(app_ctx->llm), tensor, n_inputs, perf);
+    printf("--> inference qwen2_5_vl llm model\n");
 
-    if (ret != 0)
-    {
-        printf("inference qwen2_5_vl llm model fail! ret=%d\n", ret);
+#ifdef ENABLE_SPEEDUP
+    if (!app_ctx->speedup) {
+        printf("[SpeedUP] handle is NULL, run normal inference without SpeedUP\n");
+    } else {
+        int output_count_per_input = tensor.image.n_image_tokens;
+        ret = speedup_prepare_rknn_multimodal_tensor(app_ctx->speedup,
+                                                          img_embeds,
+                                                          app_ctx->vision.embeds_shape,
+                                                          app_ctx->vision.embeds_ndims,
+                                                          &tensor,
+                                                          app_ctx->vision.model_width,
+                                                          app_ctx->vision.model_height,
+                                                          speedup_ratio,
+                                                          app_ctx->llm.rknn_sess,
+                                                          &output_count_per_input);
+        if (ret != 0) {
+            printf("[SpeedUP] prepare failed! ret=%d\n", ret);
+            return ret;
+        }
+    }
+#endif
+
+    ret = inference_qwen2_5_vl_llm(&(app_ctx->llm), tensor, n_inputs, perf);
+    if (ret != 0) {
+        printf("inference_qwen2_5_vl llm model fail! ret=%d\n", ret);
         return ret;
     }
 

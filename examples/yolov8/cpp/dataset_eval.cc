@@ -179,7 +179,7 @@ int main(int argc, char **argv)
         ret = read_image(image_path.c_str(), &src_image);
         if (ret != 0)
         {
-            printf("read image fail! ret=%d image_path=%s\n", ret, image_path);
+            printf("read image fail! ret=%d image_path=%s\n", ret, image_path.c_str());
             goto out;
         }
 

@@ -132,7 +132,7 @@ int init_internal_share(rknn_app_context_t* app_ctx, uint32_t core_mask_vision, 
         }
         printf("Created user internal memory for core %d: size=%lu, virt_addr=%p, phys_addr=0x%lx\n", core_mem_sizes_llm[i].core_id,
                 internal_mems_llm[i]->size, internal_mems_llm[i]->virt_addr, internal_mems_llm[i]->phys_addr);
-        app_ctx->internal_mems[idx++] = internal_mems_vision[i];
+        app_ctx->internal_mems[idx++] = internal_mems_llm[i];
     }
 
     ret = rknn3_set_internal_mem(app_ctx->vision.rknn_ctx, internal_mems_vision, core_num_vision);

@@ -17,7 +17,6 @@ struct unicode_cpt_flags {
         MASK_CATEGORIES = 0x00FF,
     };
 
-    // codepoint type
     uint16_t is_undefined   : 1;
     uint16_t is_number      : 1;  // regex: \p{N}
     uint16_t is_letter      : 1;  // regex: \p{L}
@@ -26,13 +25,11 @@ struct unicode_cpt_flags {
     uint16_t is_punctuation : 1;  // regex: \p{P}
     uint16_t is_symbol      : 1;  // regex: \p{S}
     uint16_t is_control     : 1;  // regex: \p{C}
-    // helper flags
     uint16_t is_whitespace  : 1;  // regex: \s
     uint16_t is_lowercase   : 1;
     uint16_t is_uppercase   : 1;
     uint16_t is_nfd         : 1;
 
-    // decode from uint16
     inline unicode_cpt_flags(const uint16_t flags = 0) {
         *reinterpret_cast<uint16_t*>(this) = flags;
     }
@@ -46,12 +43,19 @@ struct unicode_cpt_flags {
     }
 };
 
+// 连续大 buffer + 每个 word 长度。用于替代 vector<string>，减少 tokenizer 预分词阶段的小块分配。
+struct regex_split_result {
+    std::string buffer;
+    std::vector<size_t> word_lengths;
+};
+
 size_t unicode_len_utf8(char src);
 
 std::string unicode_cpt_to_utf8  (uint32_t cpt);
 uint32_t    unicode_cpt_from_utf8(const std::string & utf8, size_t & offset);
 
 std::vector<uint32_t> unicode_cpts_from_utf8(const std::string & utf8);
+void unicode_cpts_from_utf8_into(const std::string & utf8, std::vector<uint32_t> & result);
 
 std::vector<uint32_t> unicode_cpts_normalize_nfd(const std::vector<uint32_t> & cpts);
 
@@ -63,4 +67,16 @@ uint8_t     unicode_utf8_to_byte(const std::string & utf8);
 
 uint32_t unicode_tolower(uint32_t cpt);
 
-std::vector<std::string> unicode_regex_split(const std::string & text, const std::vector<std::string> & regex_exprs);
+regex_split_result unicode_regex_split(
+    const std::string & text,
+    const std::vector<std::string> & regex_exprs,
+    bool byte_encode = true);
+
+void unicode_regex_split_into(
+    const std::string & text,
+    const std::vector<std::string> & regex_exprs,
+    bool byte_encode,
+    regex_split_result & result,
+    std::vector<uint32_t> & cpts_buf,
+    std::vector<size_t> & offsets_buf,
+    std::vector<size_t> & tmp_offsets_buf);

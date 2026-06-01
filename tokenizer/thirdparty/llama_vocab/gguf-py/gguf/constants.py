@@ -356,6 +356,8 @@ class MODEL_ARCH(IntEnum):
     QWEN3MOE         = auto()
     QWEN3VL          = auto()
     QWEN3VLMOE       = auto()
+    QWEN35           = auto()
+    QWEN35MOE        = auto()
     PHI2             = auto()
     PHI3             = auto()
     PHIMOE           = auto()
@@ -370,6 +372,7 @@ class MODEL_ARCH(IntEnum):
     GEMMA2           = auto()
     GEMMA3           = auto()
     GEMMA3N          = auto()
+    GEMMA4           = auto()
     GEMMA_EMBEDDING  = auto()
     STARCODER2       = auto()
     RWKV6            = auto()
@@ -707,6 +710,8 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.QWEN3MOE:         "qwen3moe",
     MODEL_ARCH.QWEN3VL:          "qwen3vl",
     MODEL_ARCH.QWEN3VLMOE:       "qwen3vlmoe",
+    MODEL_ARCH.QWEN35:           "qwen35",
+    MODEL_ARCH.QWEN35MOE:        "qwen35moe",
     MODEL_ARCH.PHI2:             "phi2",
     MODEL_ARCH.PHI3:             "phi3",
     MODEL_ARCH.PHIMOE:           "phimoe",
@@ -721,6 +726,7 @@ MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
     MODEL_ARCH.GEMMA2:           "gemma2",
     MODEL_ARCH.GEMMA3:           "gemma3",
     MODEL_ARCH.GEMMA3N:          "gemma3n",
+    MODEL_ARCH.GEMMA4:           "gemma4",
     MODEL_ARCH.GEMMA_EMBEDDING:  "gemma-embedding",
     MODEL_ARCH.STARCODER2:       "starcoder2",
     MODEL_ARCH.RWKV6:            "rwkv6",
@@ -1548,6 +1554,8 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.FFN_DOWN_EXP,
         MODEL_TENSOR.FFN_UP_EXP,
     ],
+    MODEL_ARCH.QWEN35: [],
+    MODEL_ARCH.QWEN35MOE: [],
     MODEL_ARCH.PLAMO: [
         MODEL_TENSOR.TOKEN_EMBD,
         MODEL_TENSOR.OUTPUT_NORM,
@@ -1818,6 +1826,8 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.LAUREL_L,
         MODEL_TENSOR.LAUREL_R,
         MODEL_TENSOR.LAUREL_POST_NORM,
+    ],
+    MODEL_ARCH.GEMMA4: [
     ],
     MODEL_ARCH.GEMMA_EMBEDDING: [
         MODEL_TENSOR.TOKEN_EMBD,
