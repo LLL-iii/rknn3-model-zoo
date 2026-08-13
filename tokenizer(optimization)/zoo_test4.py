@@ -24,7 +24,7 @@ HF_MIRROR = "https://hf-mirror.com"
 os.environ["HF_ENDPOINT"] = HF_MIRROR
 
 TOKENIZE_DEMO = os.path.join(os.path.dirname(__file__),
-    "build", "build_tokenizer_linux_x86_Release", "demo", "tokenize_demo")
+    "install", "tokenizer_linux_x86", "demo", "tokenize_demo")
 RESULT_DIR = os.path.join(os.path.dirname(__file__), "zoo_test_result")
 CKPT_FILE  = os.path.join(os.path.dirname(__file__), ".zoo_test4_ckpt.json")
 
@@ -49,8 +49,8 @@ MODELS = {
     "SmolVLM2":       ("HuggingFaceTB/SmolVLM2-500M-Video-Instruct", None, {}),
     "glm_edge":       ("THUDM/glm-edge-1.5b-chat",     None, {}),
     "GME-Qwen2-VL":   ("Alibaba-NLP/GME-Qwen2-VL-2B-Instruct", None, {"use_saved_tok": True}),
-#    "gemma4":         ("google/gemma-4-E2B-it",         None,
-#                       {"trust_remote_code": True, "use_fast": False, "use_saved_tok": True}),
+    "gemma4":         ("google/gemma-4-E2B-it",         None,
+                       {"trust_remote_code": True, "use_fast": False, "use_saved_tok": True}),
     "InternVLM":      ("OpenGVLab/InternVL3-1B",        None,
                        {"trust_remote_code": True, "use_saved_tok": True}),
     "MiniCPM_V_4":    ("openbmb/MiniCPM-V-4",           None,

@@ -25,11 +25,13 @@ Error Pcre2Regex::compile(const std::string& pattern) {
   int error_code;
   PCRE2_SIZE error_offset;
 
-  // Compile the pattern with UTF-8 mode enabled first
+  // Compile with UTF-8 + UCP.  PCRE2_UCP makes \s \d \w match Unicode
+  // properties, matching the Rust regex crate's Unicode-aware \s semantics
+  // that HuggingFace tokenizers use.
   regex_ = pcre2_compile(
       reinterpret_cast<PCRE2_SPTR>(pattern.c_str()),
       pattern.length(),
-      PCRE2_UCP | PCRE2_UTF, // Enable Unicode support and UTF-8 mode
+      PCRE2_UCP | PCRE2_UTF,
       &error_code,
       &error_offset,
       nullptr);
@@ -51,7 +53,7 @@ Error Pcre2Regex::compile(const std::string& pattern) {
       regex_ = pcre2_compile(
           reinterpret_cast<PCRE2_SPTR>(pattern.c_str()),
           pattern.length(),
-          PCRE2_UCP, // Enable Unicode properties but not UTF-8 validation
+          PCRE2_UCP,
           &error_code,
           &error_offset,
           nullptr);

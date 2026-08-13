@@ -13,6 +13,7 @@
 #pragma once
 
 // Standard
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -30,20 +31,34 @@
 namespace tokenizers {
 namespace detail {
 
-// Hash function for std::pair<uint64_t, uint64_t>
-struct PairHash {
-  std::size_t operator()(const std::pair<uint64_t, uint64_t>& p) const {
-    return std::hash<uint64_t>{}(p.first) ^
-        (std::hash<uint64_t>{}(p.second) << 1);
-  }
+// Flat, sorted merge entry: (fid, sid) -> (rank, mid).
+// Stored in a contiguous std::vector and binary-searched, avoiding the
+// ~32-byte-per-node overhead of std::unordered_map (which for 250K BPE
+// merge rules was ~20 MB; the flat vector is ~8 MB and cache-friendly).
+struct MergeEntry {
+  uint64_t fid;
+  uint64_t sid;
+  uint64_t mid;
+  uint32_t rank;
 };
 
-// Type alias for BPE merge map: (token_id_1, token_id_2) -> (rank,
-// merged_token_id)
-using MergeMap = std::unordered_map<
-    std::pair<uint64_t, uint64_t>,
-    std::pair<uint64_t, uint64_t>,
-    PairHash>;
+// BPE merge map: (token_id_1, token_id_2) -> (rank, merged_token_id).
+// Sorted by (fid, sid) for std::lower_bound lookup.
+using MergeMap = std::vector<MergeEntry>;
+
+// Lookup helper: returns pointer to matching entry or nullptr.
+inline const MergeEntry* merge_lookup(
+    const MergeMap& map, uint64_t fid, uint64_t sid) {
+  auto it = std::lower_bound(
+      map.begin(), map.end(), MergeEntry{fid, sid, 0, 0},
+      [](const MergeEntry& a, const MergeEntry& b) {
+        return a.fid < b.fid || (a.fid == b.fid && a.sid < b.sid);
+      });
+  if (it != map.end() && it->fid == fid && it->sid == sid) {
+    return &*it;
+  }
+  return nullptr;
+}
 
 } // namespace detail
 

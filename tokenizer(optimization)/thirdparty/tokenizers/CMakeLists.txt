@@ -107,6 +107,7 @@ set(tokenizers_source_files
 file(GLOB unicode_source_files
      ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp
 )
+
 add_library(
   tokenizers STATIC ${tokenizers_source_files} ${unicode_source_files}
 )

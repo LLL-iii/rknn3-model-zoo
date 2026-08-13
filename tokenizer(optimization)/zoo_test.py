@@ -13,38 +13,38 @@ TOKENIZE_DEMO = os.path.join(os.path.dirname(__file__),
 MODELS = {
     # ==================== BPE (ByteLevel) — 16 models ====================
     "Qwen3":           ("Qwen/Qwen3-1.7B",              None, None),
-#    "Qwen2_5":         ("Qwen/Qwen2.5-3B-Instruct",     None, None),
-#    "Qwen2_5_VL":      ("Qwen/Qwen2.5-VL-3B-Instruct",  None, None),
-#    "Qwen2_5_Omni":    ("Qwen/Qwen2.5-Omni-3B",         None, None),
-#    "Qwen3_VL":        ("Qwen/Qwen3-VL-4B-Instruct",     None, None),
-#    "Qwen3_VL_LoRA":   ("Qwen/Qwen3-VL-4B-Instruct",     None, {"_same_as": "Qwen3_VL"}),
-#    "Qwen3_ASR":       ("Qwen/Qwen3-ASR-0.6B",          None, None),
-#    "Qwen3_Embedding": ("Qwen/Qwen3-Embedding-0.6B",    None, None),
-#    "Qwen3_Reranker":  ("Qwen/Qwen3-Reranker-0.6B",     None, None),
-#    "Qwen3_TTS":       ("Qwen/Qwen3-TTS-12Hz-1.7B-Base", None, None),
-#    "HY_MT_1_5":       ("Tencent-Hunyuan/HY-MT1.5-1.8B", None,  # known: post_processor SpecialToken string ID
-#                        {"use_modelscope": True}),
-#    "Janus_Pro":       ("deepseek-ai/Janus-Pro-1B",      None,
-#                       # save_pretrained rewrites Sequence→Metaspace
-#                       {"use_saved_tok_for_comparison": True}),
-#    "SmolVLM":         ("HuggingFaceTB/SmolVLM-500M-Instruct", None, None),
-#    "SmolVLM2":        ("HuggingFaceTB/SmolVLM2-500M-Video-Instruct", None, None),
-#    "glm_edge":        ("THUDM/glm-edge-1.5b-chat",     None, None),
-#    "GME-Qwen2-VL":    ("Alibaba-NLP/GME-Qwen2-VL-2B-Instruct", None, None),
+    "Qwen2_5":         ("Qwen/Qwen2.5-3B-Instruct",     None, None), 
+    "Qwen2_5_VL":      ("Qwen/Qwen2.5-VL-3B-Instruct",  None, None),
+    "Qwen2_5_Omni":    ("Qwen/Qwen2.5-Omni-3B",         None, None),
+    "Qwen3_VL":        ("Qwen/Qwen3-VL-4B-Instruct",     None, None),
+    "Qwen3_VL_LoRA":   ("Qwen/Qwen3-VL-4B-Instruct",     None, {"_same_as": "Qwen3_VL"}),
+    "Qwen3_ASR":       ("Qwen/Qwen3-ASR-0.6B",          None, None),
+    "Qwen3_Embedding": ("Qwen/Qwen3-Embedding-0.6B",    None, None),
+    "Qwen3_Reranker":  ("Qwen/Qwen3-Reranker-0.6B",     None, None),
+    "Qwen3_TTS":       ("Qwen/Qwen3-TTS-12Hz-1.7B-Base", None, None),
+    "HY_MT_1_5":       ("Tencent-Hunyuan/HY-MT1.5-1.8B", None,  # known: post_processor SpecialToken string ID
+                        {"use_modelscope": True}),
+    "Janus_Pro":       ("deepseek-ai/Janus-Pro-1B",      None,
+                       # save_pretrained rewrites Sequence→Metaspace
+                       {"use_saved_tok_for_comparison": True}),
+    "SmolVLM":         ("HuggingFaceTB/SmolVLM-500M-Instruct", None, None),
+    "SmolVLM2":        ("HuggingFaceTB/SmolVLM2-500M-Video-Instruct", None, None),
+    "glm_edge":        ("THUDM/glm-edge-1.5b-chat",     None, None),
+    "GME-Qwen2-VL":    ("Alibaba-NLP/GME-Qwen2-VL-2B-Instruct", None, None),
 
     # ==================== SPM (SentencePiece) — 5 models ====================
-#    "gemma4":          ("google/gemma-4-E2B-it",         None,
-#                        {"trust_remote_code": True, "use_fast": False,
-#                         "use_saved_tok_for_comparison": True}),
-#    "InternVLM":       ("OpenGVLab/InternVL3-1B",        None,
-#                        {"trust_remote_code": True}),
-#    "MiniCPM_V_4":     ("openbmb/MiniCPM-V-4",           None,
-#                        {"trust_remote_code": True}),
-#    "FastVLM":         ("llava-hf/llava-1.5-7b-hf",      None, None),
+    "gemma4":          ("google/gemma-4-E2B-it",         None,
+                        {"trust_remote_code": True, "use_fast": False,
+                         "use_saved_tok_for_comparison": True}),
+    "InternVLM":       ("OpenGVLab/InternVL3-1B",        None,
+                        {"trust_remote_code": True}),
+    "MiniCPM_V_4":     ("openbmb/MiniCPM-V-4",           None,
+                        {"trust_remote_code": True}),
+    "FastVLM":         ("llava-hf/llava-1.5-7b-hf",      None, None),
 }
 
 TEST_TEXTS = [
-    "é ê ë è à â ä ô ö ù ü î ï ÿ ç ñ ¡ ¿ œ Œ € “ ”",
+    "hello world!",
     
 ]
 

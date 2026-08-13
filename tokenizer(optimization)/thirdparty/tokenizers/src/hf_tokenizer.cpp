@@ -12,13 +12,22 @@
 #include <unicode.h>
 
 // Standard
+#include <algorithm>
 #include <cinttypes>
+#include <cstdio>
+#include <cstring>
+#include <fcntl.h>
 #include <fstream>
 #include <queue>
 #include <string>
 #include <vector>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
+
+#ifdef __GLIBC__
+#include <malloc.h>
+#endif
 
 // Third Party
 #include <nlohmann/json.hpp>
@@ -38,7 +47,159 @@ std::string fs_path_join(const std::string& a, const std::string& b) {
     if (a.back() == '/') return a + b;
     return a + "/" + b;
 }
+
+// ── Reliable JSON scanner for tokenizer.json ─────────────────────────
+// We hand-scan the large vocab/merges sections to avoid building a full
+// in-memory JSON node tree.  The key correctness requirement is that 
+// bracket counting must skip JSON string literals in one shot (not a 
+// char-by-char in_str state machine that trips on escaped quotes / 
+//braces inside tokens).
+
+inline bool is_ws(char c) {
+  return c == ' ' || c == '\t' || c == '\n' || c == '\r';
 }
+inline const char* skip_ws(const char* p, const char* end) {
+  while (p < end && is_ws(*p)) ++p;
+  return p;
+}
+
+// Skip a JSON string literal starting at p (must point at '"').
+// Returns pointer past the closing quote.
+static const char* skip_json_string(const char* p, const char* end) {
+  if (p >= end || *p != '"') return p;
+  ++p;
+  while (p < end) {
+    if (*p == '\\') { p += 2; continue; }   // skip escaped char
+    if (*p == '"') { ++p; break; }
+    ++p;
+  }
+  return p;
+}
+
+// Decode a JSON string literal starting at p (must point at '"').
+// Returns decoded string and advances *out past the closing quote.
+static std::string decode_json_string(const char* p, const char* end,
+                                      const char** out) {
+  std::string s;
+  if (p >= end || *p != '"') { *out = p; return s; }
+  ++p;
+  while (p < end && *p != '"') {
+    unsigned char c = (unsigned char)*p;
+    if (c == '\\' && p + 1 < end) {
+      ++p;
+      unsigned char e = (unsigned char)*p;
+      switch (e) {
+        case '"': s.push_back('"'); ++p; break;
+        case '\\': s.push_back('\\'); ++p; break;
+        case '/': s.push_back('/'); ++p; break;
+        case 'b': s.push_back('\b'); ++p; break;
+        case 'f': s.push_back('\f'); ++p; break;
+        case 'n': s.push_back('\n'); ++p; break;
+        case 'r': s.push_back('\r'); ++p; break;
+        case 't': s.push_back('\t'); ++p; break;
+        case 'u': {
+          unsigned cp = 0;
+          if (p + 4 < end) {
+            for (int i = 1; i <= 4; ++i) {
+              unsigned char h = (unsigned char)p[i];
+              cp <<= 4;
+              if (h >= '0' && h <= '9') cp |= (unsigned)(h - '0');
+              else if (h >= 'a' && h <= 'f') cp |= (unsigned)(h - 'a' + 10);
+              else if (h >= 'A' && h <= 'F') cp |= (unsigned)(h - 'A' + 10);
+              else cp = 0xFFFDu;
+            }
+            p += 5;
+          } else p = end;
+          if (cp < 0x80) s.push_back((char)cp);
+          else if (cp < 0x800) {
+            s.push_back((char)(0xC0 | (cp >> 6)));
+            s.push_back((char)(0x80 | (cp & 0x3F)));
+          } else {
+            s.push_back((char)(0xE0 | (cp >> 12)));
+            s.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+            s.push_back((char)(0x80 | (cp & 0x3F)));
+          }
+          break;
+        }
+        default: ++p; break;
+      }
+    } else {
+      s.push_back((char)c);
+      ++p;
+    }
+  }
+  if (p < end && *p == '"') ++p;
+  *out = p;
+  return s;
+}
+
+static bool decode_uint(const char* p, const char* end, uint64_t* out,
+                        const char** out_end) {
+  uint64_t v = 0; bool any = false;
+  while (p < end && *p >= '0' && *p <= '9') {
+    v = v * 10 + (uint64_t)(*p - '0'); any = true; ++p;
+  }
+  *out = v; *out_end = p; return any;
+}
+
+// Find the value range [start, end) of the JSON key `key` anywhere in data.
+// Skips string literals whole, so braces/quotes inside token strings can
+// never corrupt the bracket count.
+static std::pair<const char*, const char*>
+find_key_value(const char* data, size_t len, const char* key) {
+  std::string pat = "\"" + std::string(key) + "\"";
+  const char* p = data;
+  const char* end = data + len;
+  while (p + pat.size() <= end) {
+    const char* hit = nullptr;
+    // linear scan for `"key"`, skipping over string literals so a token
+    // that happens to contain `"key"` inside its value is not matched.
+    for (const char* q = p; q + pat.size() <= end; ) {
+      if (*q == '"') {
+        // A string literal here could be a key or a value.  If it matches
+        // pat AND is followed by ':', it's our key; otherwise skip it whole.
+        if (memcmp(q, pat.data(), pat.size()) == 0) {
+          const char* after = skip_ws(q + pat.size(), end);
+          if (after < end && *after == ':') { hit = q; break; }
+        }
+        q = skip_json_string(q, end);
+      } else {
+        ++q;
+      }
+    }
+    if (!hit) break;
+    // Must be a key: followed by optional ws + ':'
+    const char* after = skip_ws(hit + pat.size(), end);
+    if (after < end && *after == ':') {
+      const char* vs = skip_ws(after + 1, end);
+      if (vs >= end) return {nullptr, nullptr};
+      char open = *vs, close = 0;
+      if (open == '{') close = '}';
+      else if (open == '[') close = ']';
+      else if (open == '"') {
+        return {vs, skip_json_string(vs, end)};
+      } else {
+        const char* q = vs;
+        while (q < end && *q != ',' && *q != '}' && *q != ']') ++q;
+        return {vs, q};
+      }
+      int depth = 0;
+      const char* q = vs;
+      while (q < end) {
+        char c = *q;
+        if (c == '"') { q = skip_json_string(q, end); continue; }
+        if (c == open) ++depth;
+        else if (c == close) { --depth; if (depth == 0) { ++q; break; } }
+        ++q;
+      }
+      return {vs, q};
+    }
+    p = hit + 1;
+  }
+  return {nullptr, nullptr};
+}
+}
+
 
 namespace tokenizers {
 
@@ -81,9 +242,10 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
     if (i < 0 || next[i] < 0) {
       return;
     }
-    auto it = merge_map.find({tokens[i], tokens[next[i]]});
-    if (it != merge_map.end()) {
-      heap.push({it->second.first, i, version[i]});
+    const auto* e =
+        detail::merge_lookup(merge_map, tokens[i], tokens[next[i]]);
+    if (e) {
+      heap.push({e->rank, i, version[i]});
     }
   };
 
@@ -99,13 +261,13 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
       continue; // stale entry
     }
     const int64_t j = next[i];
-    auto it = merge_map.find({tokens[i], tokens[j]});
-    if (it == merge_map.end() || it->second.first != c.rank) {
+    const auto* e = detail::merge_lookup(merge_map, tokens[i], tokens[j]);
+    if (!e || e->rank != c.rank) {
       continue; // superseded by a different merge at this position
     }
 
     // Merge j into i.
-    tokens[i] = it->second.second;
+    tokens[i] = e->mid;
     byte_lengths[i] += byte_lengths[j];
     alive[j] = false;
     const int64_t jn = next[j];
@@ -169,35 +331,192 @@ Error HFTokenizer::load(const std::string& path) {
     }
   }
 
-  std::ifstream file(model_json);
-  if (!file) {
+  int fd = open(model_json.c_str(), O_RDONLY);
+  if (fd < 0) {
     TK_LOG(Info, "failed to open encoder file: %s", path.c_str());
     return Error::LoadFailure;
   }
-  std::string contents(
-      (std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-  json parsed_json;
-  try {
-    parsed_json = json::parse(contents);
-  } catch (const std::exception& e) {
-    TK_LOG(Error, "Error parsing json file: %s", e.what());
+  struct stat st;
+  fstat(fd, &st);
+  size_t data_len = st.st_size;
+  const char *data = (const char *)mmap(nullptr, data_len, PROT_READ,
+                                        MAP_PRIVATE, fd, 0);
+  close(fd);
+  if (data == MAP_FAILED) {
+    TK_LOG(Error, "mmap failed for %s", model_json.c_str());
     return Error::LoadFailure;
   }
+  // ── added_tokens (small; nlohmann parses the sub-range) ───────
+  fprintf(stderr, "STAGE:specials\n"); fflush(stderr);
+  {
+    auto rg = find_key_value(data, data_len, "added_tokens");
+    if (rg.first) {
+      try {
+        std::string frag(rg.first, rg.second);
+        json j = json::parse(frag);
+        std::vector<std::pair<std::string, uint64_t>> sp;
+        if (j.is_array()) {
+          for (auto& e : j) {
+            if (e.contains("content") && e.contains("id"))
+              sp.emplace_back(e["content"].get<std::string>(),
+                              e["id"].get<uint64_t>());
+          }
+        }
+        auto r = detail::build_token_map(std::move(sp));
+        if (!r.ok()) { munmap((void*)data, data_len); return r.error(); }
+        auto rx = detail::build_special_token_regex(*r);
+        if (!rx.ok()) { munmap((void*)data, data_len); return rx.error(); }
+        special_token_regex_ = std::move(*rx);
+        special_token_map_.emplace(std::move(*r));
+      } catch (const std::exception& e) {
+        munmap((void*)data, data_len);
+        TK_LOG(Error, "added_tokens parse failed: %s", e.what());
+        return Error::LoadFailure;
+      }
+    }
+  }
 
-  TK_CHECK_OK_OR_RETURN_ERROR(parse_special_tokens(parsed_json));
-  TK_CHECK_OK_OR_RETURN_ERROR(parse_tokens(parsed_json));
-
+  // ── vocab: hand-scan "key": uint pairs ────────────────────────
+  fprintf(stderr, "STAGE:vocab\n"); fflush(stderr);
+  {
+    auto rg = find_key_value(data, data_len, "vocab");
+    if (rg.first) {
+      std::vector<std::pair<std::string, uint64_t>> tp;
+      const char* p = rg.first + 1;          // past '{'
+      const char* e = rg.second - 1;         // before '}'
+      while (p < e) {
+        p = skip_ws(p, e);
+        if (p >= e || *p != '"') break;
+        std::string key = decode_json_string(p, e, &p);
+        p = skip_ws(p, e);
+        if (p >= e || *p != ':') break;
+        p = skip_ws(p + 1, e);
+        uint64_t id = 0;
+        if (!decode_uint(p, e, &id, &p)) break;
+        if (!special_token_map_->tryGetString(id))
+          tp.emplace_back(std::move(key), id);
+        p = skip_ws(p, e);
+        if (p < e && *p == ',') { ++p; continue; }
+        break;
+      }
+      fprintf(stderr, "DEBUG vocab parsed=%zu entries\n", tp.size());
+      auto r = detail::build_token_map(std::move(tp));
+      if (!r.ok()) { munmap((void*)data, data_len); return r.error(); }
+      token_map_.emplace(std::move(*r));
+    }
+  }
   vocab_size_ = token_map_->size() + special_token_map_->size();
+  fprintf(stderr, "DEBUG vocab_size=%d\n", vocab_size_);
 
-  TK_CHECK_OK_OR_RETURN_ERROR(setup_normalizer(parsed_json));
-  TK_CHECK_OK_OR_RETURN_ERROR(setup_pretokenizer(parsed_json));
-  TK_CHECK_OK_OR_RETURN_ERROR(setup_postprocessor(parsed_json));
-  TK_CHECK_OK_OR_RETURN_ERROR(setup_decoder(parsed_json));
+  // ── merges: hand-scan "a b" string array ──────────────────────
+  fprintf(stderr, "STAGE:merges\n"); fflush(stderr);
+  {
+    auto rg = find_key_value(data, data_len, "merges");
+    if (rg.first) {
+      merge_map_ = std::make_unique<detail::MergeMap>();
+      const char* p = rg.first + 1;          // past '['
+      const char* e = rg.second - 1;         // before ']'
+      uint32_t mi = 0;
+      while (p < e) {
+        p = skip_ws(p, e);
+        if (p >= e) break;
+        std::string f, sec;
+        if (*p == '"') {
+          // String format: "a b"  (gemma4)
+          std::string s = decode_json_string(p, e, &p);
+          if (!s.empty() && s.rfind("#version", 0) != 0) {
+            size_t sp = s.find(' ');
+            if (sp != std::string::npos) {
+              f = s.substr(0, sp);
+              sec = s.substr(sp + 1);
+            }
+          }
+        } else if (*p == '[') {
+          // Array format: ["a", "b"]  (Qwen3)
+          ++p;
+          p = skip_ws(p, e);
+          if (p < e && *p == '"') f = decode_json_string(p, e, &p);
+          p = skip_ws(p, e);
+          if (p < e && *p == ',') { ++p; p = skip_ws(p, e); }
+          if (p < e && *p == '"') sec = decode_json_string(p, e, &p);
+          p = skip_ws(p, e);
+          if (p < e && *p == ']') ++p;
+        } else {
+          break;  // unknown format
+        }
+        if (!f.empty() && !sec.empty()) {
+          auto fid = token_map_->tryGetInteger(f);
+          auto sid = token_map_->tryGetInteger(sec);
+          if (fid && sid) {
+            std::string merged = f + sec;
+            auto mid = token_map_->tryGetInteger(merged);
+            if (mid)
+              merge_map_->push_back(
+                  detail::MergeEntry{*fid, *sid, *mid, mi});
+          }
+        }
+        ++mi;
+        p = skip_ws(p, e);
+        if (p < e && *p == ',') { ++p; continue; }
+        break;
+      }
+      std::sort(merge_map_->begin(), merge_map_->end(),
+                [](const detail::MergeEntry& a, const detail::MergeEntry& b) {
+                  return a.fid < b.fid ||
+                         (a.fid == b.fid && a.sid < b.sid);
+                });
+      fprintf(stderr, "DEBUG merges parsed=%zu entries\n", merge_map_->size());
+    }
+  }
 
-  TK_CHECK_OK_OR_RETURN_ERROR(parse_merges(parsed_json));
+  // ── config sections (small; nlohmann parses each sub-range) ──
+  json cfg;
+  {
+    auto parse_sub = [&](const char *key) {
+      auto rg = find_key_value(data, data_len, key);
+      if (rg.first) {
+        std::string frag(rg.first, rg.second);
+        try { cfg[key] = json::parse(frag); }
+        catch (...) {}
+      }
+    };
+    parse_sub("normalizer");
+    parse_sub("pre_tokenizer");
+    parse_sub("post_processor");
+    parse_sub("decoder");
 
+    cfg["model"] = json::object();
+    {
+      auto rg = find_key_value(data, data_len, "byte_fallback");
+      if (rg.first) {
+        std::string frag(rg.first, rg.second);
+        try { cfg["model"]["byte_fallback"] = json::parse(frag); }
+        catch (...) {}
+      }
+    }
+    {
+      auto rg = find_key_value(data, data_len, "unk_token");
+      if (rg.first) {
+        std::string frag(rg.first, rg.second);
+        try { cfg["model"]["unk_token"] = json::parse(frag); }
+        catch (...) {}
+      }
+    }
+  }
+
+  fprintf(stderr, "STAGE:free\n"); fflush(stderr);
+  munmap((void*)data, data_len);
+#if defined(__GLIBC__)
+  malloc_trim(0);
+#endif
+
+  // ── Setup config-driven components ─────────────────────────
+  TK_CHECK_OK_OR_RETURN_ERROR(setup_normalizer(cfg));
+  TK_CHECK_OK_OR_RETURN_ERROR(setup_pretokenizer(cfg));
+  TK_CHECK_OK_OR_RETURN_ERROR(setup_postprocessor(cfg));
+  TK_CHECK_OK_OR_RETURN_ERROR(setup_decoder(cfg));
   TK_CHECK_OK_OR_RETURN_ERROR(setup_special_token_ids(
-      path, parsed_json, model_config_json, special_tokens_map_json));
+      path, cfg, model_config_json, special_tokens_map_json));
 
   initialized_ = true;
   return Error::Ok;
@@ -608,12 +927,17 @@ Error HFTokenizer::parse_merges(const json& parsed_json) {
         std::string merged = first + second;
         auto merged_id = token_map_->tryGetInteger(merged);
         if (merged_id) {
-          merge_map_->emplace(
-              std::make_pair(*first_id, *second_id),
-              std::make_pair(static_cast<uint32_t>(i), *merged_id));
+          merge_map_->push_back(
+              detail::MergeEntry{*first_id, *second_id, *merged_id,
+                                 static_cast<uint32_t>(i)});
         }
       }
     }
+    std::sort(merge_map_->begin(), merge_map_->end(),
+              [](const detail::MergeEntry& a, const detail::MergeEntry& b) {
+                return a.fid < b.fid ||
+                       (a.fid == b.fid && a.sid < b.sid);
+              });
   } catch (const std::exception& e) {
     TK_LOG(Error, "Could not parse merges: %s", e.what());
     return Error::LoadFailure;

@@ -239,8 +239,8 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
     std::uint64_t integer = 0;
     std::string_view string;
     std::size_t hash = 0;
-    std::size_t element_offset = 0;
-    std::size_t original_index = 0;
+    std::uint32_t element_offset = 0;   // < 2^32 (data size < 4 GB)
+    std::uint32_t original_index = 0;   // < 2^32 (vocab < 4G entries)
   };
 
   std::vector<BuilderElement> builder_string_elements;
@@ -420,8 +420,8 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
   string_element_data_.resize(string_element_data_size + sizeof(std::uint64_t));
   auto* string_element = string_element_data_.data();
   for (auto& builder_element : builder_string_elements) {
-    builder_element.element_offset =
-        string_element - string_element_data_.data();
+    builder_element.element_offset = static_cast<std::uint32_t>(
+        string_element - string_element_data_.data());
 
     string_offsets_by_index[builder_element.original_index] =
         builder_element.element_offset;
@@ -474,8 +474,8 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
       integer_element_data_size + sizeof(std::uint64_t));
   auto* integer_element = integer_element_data_.data();
   for (auto& builder_element : builder_integer_elements) {
-    builder_element.element_offset =
-        integer_element - integer_element_data_.data();
+    builder_element.element_offset = static_cast<std::uint32_t>(
+        integer_element - integer_element_data_.data());
     auto string_element_byte_offset =
         string_offsets_by_index[builder_element.original_index];
     integer_element = integer_.write(integer_element, builder_element.integer);

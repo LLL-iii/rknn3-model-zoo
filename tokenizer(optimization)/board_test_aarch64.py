@@ -410,11 +410,11 @@ def main():
     mm_detail = {r['model']: r.get('samples', [])
                  for r in report if r['mismatches'] > 0}
     if mm_detail:
-        mm_path = os.path.join(RESULT_DIR, "board_test_mismatch.json")
+        mm_path = os.path.join(RESULT_DIR, "board_test_mismatch_aarch64.json")
         with open(mm_path, "w", encoding="utf-8") as f:
             json.dump(mm_detail, f, indent=2, ensure_ascii=False)
 
-    rpt_path = os.path.join(RESULT_DIR, "board_test_report.md")
+    rpt_path = os.path.join(RESULT_DIR, "board_test_report_aarch64.md")
     with open(rpt_path, "w", encoding="utf-8") as f:
         f.write("\n".join(md_lines) + "\n")
     print(f"Report saved: {rpt_path}")
