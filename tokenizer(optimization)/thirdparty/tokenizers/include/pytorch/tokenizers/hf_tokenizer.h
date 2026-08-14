@@ -35,10 +35,13 @@ namespace detail {
 // Stored in a contiguous std::vector and binary-searched, avoiding the
 // ~32-byte-per-node overhead of std::unordered_map (which for 250K BPE
 // merge rules was ~20 MB; the flat vector is ~8 MB and cache-friendly).
+// Token ids are uint32_t: every supported vocabulary is far below 2^32, so
+// three uint64 fields collapse to uint32 and the entry shrinks from 32 to 16
+// bytes, cutting the merge map roughly in half.
 struct MergeEntry {
-  uint64_t fid;
-  uint64_t sid;
-  uint64_t mid;
+  uint32_t fid;
+  uint32_t sid;
+  uint32_t mid;
   uint32_t rank;
 };
 
@@ -50,7 +53,8 @@ using MergeMap = std::vector<MergeEntry>;
 inline const MergeEntry* merge_lookup(
     const MergeMap& map, uint64_t fid, uint64_t sid) {
   auto it = std::lower_bound(
-      map.begin(), map.end(), MergeEntry{fid, sid, 0, 0},
+      map.begin(), map.end(),
+      MergeEntry{static_cast<uint32_t>(fid), static_cast<uint32_t>(sid), 0, 0},
       [](const MergeEntry& a, const MergeEntry& b) {
         return a.fid < b.fid || (a.fid == b.fid && a.sid < b.sid);
       });

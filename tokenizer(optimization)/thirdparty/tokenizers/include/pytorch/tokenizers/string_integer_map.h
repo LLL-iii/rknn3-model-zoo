@@ -244,9 +244,7 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
   };
 
   std::vector<BuilderElement> builder_string_elements;
-  std::vector<BuilderElement> builder_integer_elements;
   builder_string_elements.reserve(map.size());
-  builder_integer_elements.reserve(map.size());
 
   //
   // Calculate various item sizes and gather the builder elements.
@@ -262,9 +260,8 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
     largest_string_size = std::max(largest_string_size, str.size());
     largest_integer = std::max(largest_integer, integer);
     builder_string_elements.push_back(
-        {integer, str, string_hasher_(str), 0, idx});
-    builder_integer_elements.push_back(
-        {integer, str, integer_hasher_(integer), 0, idx});
+        {integer, str, string_hasher_(str), 0,
+         static_cast<std::uint32_t>(idx)});
     ++idx;
   }
 
@@ -364,54 +361,6 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
     }
   }
 
-  // Counting sort by bucket index (O(n) vs O(n log n))
-  {
-    std::vector<std::size_t> counts(bucket_count_ + 1, 0);
-    for (const auto& e : builder_integer_elements) {
-      counts[e.hash % bucket_count_]++;
-    }
-    std::size_t total = 0;
-    for (auto& c : counts) {
-      auto old = c;
-      c = total;
-      total += old;
-    }
-    std::vector<BuilderElement> sorted(builder_integer_elements.size());
-    for (auto& e : builder_integer_elements) {
-      sorted[counts[e.hash % bucket_count_]++] = std::move(e);
-    }
-    builder_integer_elements = std::move(sorted);
-
-    // Sort within each bucket by integer value
-    {
-      std::size_t bucket_start = 0;
-      for (std::size_t b = 0; b < bucket_count_; ++b) {
-        std::size_t bucket_end = counts[b];
-        if (bucket_end - bucket_start > 1) {
-          std::sort(
-              builder_integer_elements.begin() + bucket_start,
-              builder_integer_elements.begin() + bucket_end,
-              [](const BuilderElement& a, const BuilderElement& b) {
-                return a.integer < b.integer;
-              });
-        }
-        bucket_start = bucket_end;
-      }
-    }
-  }
-
-  // Detect duplicate ranks (adjacent after sort)
-  for (std::size_t i = 1; i < builder_integer_elements.size(); ++i) {
-    if (builder_integer_elements[i].integer ==
-        builder_integer_elements[i - 1].integer) {
-      TK_LOG(
-          Error,
-          "duplicate rank: %llu",
-          static_cast<unsigned long long>(builder_integer_elements[i].integer));
-      return Error::ParseFailure;
-    }
-  }
-
   //
   // Lay out the string elements and record their positions.
   //
@@ -465,6 +414,73 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
   }
 
   std::vector<BuilderElement>().swap(builder_string_elements);
+
+  //
+  // Build the integer-side index now that the string-side builder is gone.
+  // Deferring this keeps only one ~N-sized BuilderElement array live at a
+  // time, roughly halving build-time peak heap (each array is ~15 MB at
+  // gemma4's 393K vocab).
+  //
+
+  std::vector<BuilderElement> builder_integer_elements;
+  builder_integer_elements.reserve(map.size());
+  {
+    std::size_t idx = 0;
+    for (const auto& [str, integer] : map) {
+      builder_integer_elements.push_back(
+          {integer, str, integer_hasher_(integer), 0,
+           static_cast<std::uint32_t>(idx)});
+      ++idx;
+    }
+  }
+
+  // Counting sort by bucket index (O(n) vs O(n log n))
+  {
+    std::vector<std::size_t> counts(bucket_count_ + 1, 0);
+    for (const auto& e : builder_integer_elements) {
+      counts[e.hash % bucket_count_]++;
+    }
+    std::size_t total = 0;
+    for (auto& c : counts) {
+      auto old = c;
+      c = total;
+      total += old;
+    }
+    std::vector<BuilderElement> sorted(builder_integer_elements.size());
+    for (auto& e : builder_integer_elements) {
+      sorted[counts[e.hash % bucket_count_]++] = std::move(e);
+    }
+    builder_integer_elements = std::move(sorted);
+
+    // Sort within each bucket by integer value
+    {
+      std::size_t bucket_start = 0;
+      for (std::size_t b = 0; b < bucket_count_; ++b) {
+        std::size_t bucket_end = counts[b];
+        if (bucket_end - bucket_start > 1) {
+          std::sort(
+              builder_integer_elements.begin() + bucket_start,
+              builder_integer_elements.begin() + bucket_end,
+              [](const BuilderElement& a, const BuilderElement& b) {
+                return a.integer < b.integer;
+              });
+        }
+        bucket_start = bucket_end;
+      }
+    }
+  }
+
+  // Detect duplicate ranks (adjacent after sort)
+  for (std::size_t i = 1; i < builder_integer_elements.size(); ++i) {
+    if (builder_integer_elements[i].integer ==
+        builder_integer_elements[i - 1].integer) {
+      TK_LOG(
+          Error,
+          "duplicate rank: %llu",
+          static_cast<unsigned long long>(builder_integer_elements[i].integer));
+      return Error::ParseFailure;
+    }
+  }
 
   //
   // Lay out the integer elements.

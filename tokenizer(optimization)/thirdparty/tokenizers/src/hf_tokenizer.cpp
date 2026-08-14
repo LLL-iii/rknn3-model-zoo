@@ -20,6 +20,7 @@
 #include <fstream>
 #include <queue>
 #include <string>
+#include <string_view>
 #include <vector>
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -50,10 +51,10 @@ std::string fs_path_join(const std::string& a, const std::string& b) {
 
 // ── Reliable JSON scanner for tokenizer.json ─────────────────────────
 // We hand-scan the large vocab/merges sections to avoid building a full
-// in-memory JSON node tree.  The key correctness requirement is that 
-// bracket counting must skip JSON string literals in one shot (not a 
-// char-by-char in_str state machine that trips on escaped quotes / 
-//braces inside tokens).
+// in-memory JSON node tree.  The key correctness requirement is that
+// bracket counting must skip JSON string literals in one shot (not a
+// char-by-char in_str state machine that trips on escaped quotes /
+// braces inside tokens).
 
 inline bool is_ws(char c) {
   return c == ' ' || c == '\t' || c == '\n' || c == '\r';
@@ -77,11 +78,15 @@ static const char* skip_json_string(const char* p, const char* end) {
 }
 
 // Decode a JSON string literal starting at p (must point at '"').
-// Returns decoded string and advances *out past the closing quote.
-static std::string decode_json_string(const char* p, const char* end,
-                                      const char** out) {
-  std::string s;
-  if (p >= end || *p != '"') { *out = p; return s; }
+// Appends decoded bytes to `arena` and returns a view into the newly appended
+// bytes.  The caller must have reserved `arena` large enough that push_back
+// never reallocates while the returned view is outstanding (otherwise it
+// dangles).  Advances *out past the closing quote.
+static std::string_view decode_json_string_into(std::string& arena,
+                                                const char* p, const char* end,
+                                                const char** out) {
+  const size_t start = arena.size();
+  if (p >= end || *p != '"') { *out = p; return std::string_view(); }
   ++p;
   while (p < end && *p != '"') {
     unsigned char c = (unsigned char)*p;
@@ -89,14 +94,14 @@ static std::string decode_json_string(const char* p, const char* end,
       ++p;
       unsigned char e = (unsigned char)*p;
       switch (e) {
-        case '"': s.push_back('"'); ++p; break;
-        case '\\': s.push_back('\\'); ++p; break;
-        case '/': s.push_back('/'); ++p; break;
-        case 'b': s.push_back('\b'); ++p; break;
-        case 'f': s.push_back('\f'); ++p; break;
-        case 'n': s.push_back('\n'); ++p; break;
-        case 'r': s.push_back('\r'); ++p; break;
-        case 't': s.push_back('\t'); ++p; break;
+        case '"': arena.push_back('"'); ++p; break;
+        case '\\': arena.push_back('\\'); ++p; break;
+        case '/': arena.push_back('/'); ++p; break;
+        case 'b': arena.push_back('\b'); ++p; break;
+        case 'f': arena.push_back('\f'); ++p; break;
+        case 'n': arena.push_back('\n'); ++p; break;
+        case 'r': arena.push_back('\r'); ++p; break;
+        case 't': arena.push_back('\t'); ++p; break;
         case 'u': {
           unsigned cp = 0;
           if (p + 4 < end) {
@@ -110,26 +115,34 @@ static std::string decode_json_string(const char* p, const char* end,
             }
             p += 5;
           } else p = end;
-          if (cp < 0x80) s.push_back((char)cp);
+          if (cp < 0x80) arena.push_back((char)cp);
           else if (cp < 0x800) {
-            s.push_back((char)(0xC0 | (cp >> 6)));
-            s.push_back((char)(0x80 | (cp & 0x3F)));
+            arena.push_back((char)(0xC0 | (cp >> 6)));
+            arena.push_back((char)(0x80 | (cp & 0x3F)));
           } else {
-            s.push_back((char)(0xE0 | (cp >> 12)));
-            s.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
-            s.push_back((char)(0x80 | (cp & 0x3F)));
+            arena.push_back((char)(0xE0 | (cp >> 12)));
+            arena.push_back((char)(0x80 | ((cp >> 6) & 0x3F)));
+            arena.push_back((char)(0x80 | (cp & 0x3F)));
           }
           break;
         }
         default: ++p; break;
       }
     } else {
-      s.push_back((char)c);
+      arena.push_back((char)c);
       ++p;
     }
   }
   if (p < end && *p == '"') ++p;
   *out = p;
+  return std::string_view(arena.data() + start, arena.size() - start);
+}
+
+// Decode into a fresh std::string (used by the small merge/config sections).
+static std::string decode_json_string(const char* p, const char* end,
+                                      const char** out) {
+  std::string s;
+  decode_json_string_into(s, p, end, out);
   return s;
 }
 
@@ -381,20 +394,53 @@ Error HFTokenizer::load(const std::string& path) {
   {
     auto rg = find_key_value(data, data_len, "vocab");
     if (rg.first) {
-      std::vector<std::pair<std::string, uint64_t>> tp;
+      // A single arena holds every decoded token string.  Pre-reserving it to
+      // the whole vocab section guarantees no reallocation, so the string_views
+      // collected below never dangle while StringIntegerMap::init copies them.
+      // This replaces one std::string heap object per token (with its allocator
+      // churn and SSO object header) with one contiguous allocation, and the
+      // arena is freed immediately after the map is built.
+      std::string arena;
+      arena.reserve(static_cast<size_t>(rg.second - rg.first));
+      std::vector<std::pair<std::string_view, uint64_t>> tp;
+
+      // Count entries first so tp is reserved exactly.  A fixed len/10 divisor
+      // over-allocates ~1.7x on gemma4 (393K entries reserved from a 692K
+      // estimate -> ~7 MB wasted at peak, per massif).  This pre-pass only
+      // skips strings and digits, allocating nothing.
+      size_t n_entries = 0;
+      {
+        const char* q = rg.first + 1;
+        const char* qe = rg.second - 1;
+        while (q < qe) {
+          q = skip_ws(q, qe);
+          if (q >= qe || *q != '"') break;
+          q = skip_json_string(q, qe);                     // skip key
+          q = skip_ws(q, qe);
+          if (q >= qe || *q != ':') break;
+          q = skip_ws(q + 1, qe);
+          while (q < qe && *q >= '0' && *q <= '9') ++q;    // skip uint value
+          ++n_entries;
+          q = skip_ws(q, qe);
+          if (q < qe && *q == ',') { ++q; continue; }
+          break;
+        }
+      }
+      tp.reserve(n_entries);
+
       const char* p = rg.first + 1;          // past '{'
       const char* e = rg.second - 1;         // before '}'
       while (p < e) {
         p = skip_ws(p, e);
         if (p >= e || *p != '"') break;
-        std::string key = decode_json_string(p, e, &p);
+        std::string_view key = decode_json_string_into(arena, p, e, &p);
         p = skip_ws(p, e);
         if (p >= e || *p != ':') break;
         p = skip_ws(p + 1, e);
         uint64_t id = 0;
         if (!decode_uint(p, e, &id, &p)) break;
         if (!special_token_map_->tryGetString(id))
-          tp.emplace_back(std::move(key), id);
+          tp.emplace_back(key, id);
         p = skip_ws(p, e);
         if (p < e && *p == ',') { ++p; continue; }
         break;
@@ -452,7 +498,9 @@ Error HFTokenizer::load(const std::string& path) {
             auto mid = token_map_->tryGetInteger(merged);
             if (mid)
               merge_map_->push_back(
-                  detail::MergeEntry{*fid, *sid, *mid, mi});
+                  detail::MergeEntry{static_cast<uint32_t>(*fid),
+                                     static_cast<uint32_t>(*sid),
+                                     static_cast<uint32_t>(*mid), mi});
           }
         }
         ++mi;
@@ -928,7 +976,9 @@ Error HFTokenizer::parse_merges(const json& parsed_json) {
         auto merged_id = token_map_->tryGetInteger(merged);
         if (merged_id) {
           merge_map_->push_back(
-              detail::MergeEntry{*first_id, *second_id, *merged_id,
+              detail::MergeEntry{static_cast<uint32_t>(*first_id),
+                                 static_cast<uint32_t>(*second_id),
+                                 static_cast<uint32_t>(*merged_id),
                                  static_cast<uint32_t>(i)});
         }
       }

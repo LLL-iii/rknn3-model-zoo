@@ -7,7 +7,7 @@
 - 支持 BPE (ByteLevel) 和 SentencePiece 双后端，自动检测
 - 单头文件 API，PIMPL 封装，易于集成
 - 合并静态库 **~2.6 MB**（x86_64），无运行时依赖
-- 峰值内存 **~28 MB**（Qwen3），手写 JSON 扫描器替代 DOM 树，较上游降 ~65%
+- 峰值内存 **~24 MB**（板端平均），手写 JSON 扫描器 + MergeEntry 扁平化，较上游降 ~70%
 - 端到端精度 100%（20 模型 × 103 深度测试 case）
 - 跨平台：Linux x86_64 / aarch64 / Android arm64-v8a / Windows (Cygwin)
 
@@ -225,7 +225,7 @@ int main() {
 ### 5.1 单文本模式
 
 ```bash
-./tokenize_demo -t /path/to/model_dir -p "人工智能是计算机科学的重要分支。" --show-count
+./tokenize_demo -t /path/to/model_dir -p "hello world!" --show-count
 ```
 
 输出：
@@ -233,11 +233,11 @@ int main() {
 vocab_info: vocab_size=151669 n_special_bos_id=1 n_special_eos_id=1
 special_bos_id[0] = 151645
 special_eos_id[0] = 151645
-     104455 -> 'æĤºäººå...'
-      20412 -> 'æĶ¯'
-      ...
-Decode: 人工智能是计算机科学的一个重要分支。
-Total number of tokens: 7
+ 14990 -> 'hello'
+  1879 -> 'Ġworld'
+     0 -> '!'
+Decode: hello world!
+Total number of tokens: 3
 ```
 
 ### 5.2 批量编码模式
@@ -340,37 +340,37 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 
 | 平台 | 编译器 | CPU | 速度 (ms/text) | 峰值 RSS (MB) | 说明 |
 |:-----|:------|:----|:-----:|:-----:|:-----|
-| x86_64 | GCC 13 | Intel Core i7-14700 | 0.15 | 28.6 | PC 桌面端基准 |
-| Linux aarch64 | GCC 7.4 Linaro | RK3588 (4×A76 + 4×A55) | 0.27 | 27.6 | 嵌入式 Linux 板端 |
-| Android arm64-v8a | NDK r23c Clang 12 | RK3576 (4×A76 + 4×A55) | 1.18 | 22.1 | 嵌入式 Android 板端 |
+| x86_64 | GCC 13 | Intel Core i7-14700 | 0.14 | 26.1 | PC 桌面端基准 |
+| Linux aarch64 | GCC 7.4 Linaro | RK3588 (4×A76 + 4×A55) | 0.26 | 23.7 | 嵌入式 Linux 板端 |
+| Android arm64-v8a | NDK r23c Clang 12 | RK3576 (4×A76 + 4×A55) | 1.21 | 21.4 | 嵌入式 Android 板端 |
 
 ### 8.1 分模型性能
 
 | 模型 | x86_64 速度 | RK3588 速度 | RK3576 速度 | x86_64 RSS | RK3588 RSS | RK3576 RSS |
 |:-----|-----:|-----:|-----:|-----:|-----:|-----:|
-| Qwen3 | 0.15 ms | 0.27 ms | 1.18 ms | 34.5 MB | 29.6 MB | 24.6 MB |
-| Qwen2_5 | 0.16 ms | 0.27 ms | 1.21 ms | 34.6 MB | 32.6 MB | 24.7 MB |
-| Qwen2_5_VL | 0.16 ms | 0.27 ms | 1.19 ms | 34.4 MB | 34.3 MB | 24.6 MB |
-| Qwen2_5_Omni | 0.16 ms | 0.27 ms | 1.18 ms | 34.5 MB | 29.6 MB | 22.1 MB |
-| Qwen3_VL | 0.16 ms | 0.27 ms | 1.21 ms | 34.4 MB | 33.8 MB | 24.5 MB |
-| Qwen3_ASR | 0.16 ms | 0.27 ms | 1.18 ms | 34.6 MB | 29.4 MB | 24.7 MB |
-| Qwen3_Embedding | 0.16 ms | 0.27 ms | 1.18 ms | 34.5 MB | 34.3 MB | 24.6 MB |
-| Qwen3_Reranker | 0.16 ms | 0.27 ms | 1.21 ms | 34.5 MB | 33.5 MB | 24.6 MB |
-| Qwen3_TTS | 0.16 ms | 0.27 ms | 1.20 ms | 34.4 MB | 33.5 MB | 24.6 MB |
-| GME-Qwen2-VL | 0.16 ms | 0.26 ms | 1.24 ms | 34.3 MB | 29.4 MB | 27.2 MB |
-| InternVLM | 0.16 ms | 0.27 ms | 1.22 ms | 34.5 MB | 33.8 MB | 27.2 MB |
-| HY_MT_1_5 | 0.16 ms | 0.28 ms | 1.26 ms | 29.1 MB | 24.7 MB | 19.6 MB |
-| Janus_Pro | 0.21 ms | 0.32 ms | 1.59 ms | 24.6 MB | 20.3 MB | 19.2 MB |
-| SmolVLM | 0.12 ms | 0.30 ms | 1.25 ms | 13.6 MB | 6.2 MB | 9.1 MB |
-| SmolVLM2 | 0.12 ms | 0.30 ms | 1.48 ms | 13.7 MB | 6.2 MB | 9.2 MB |
-| glm_edge | 0.17 ms | 0.26 ms | 1.27 ms | 19.3 MB | 12.9 MB | 13.9 MB |
-| MiniCPM_V_4 | 0.06 ms | 0.15 ms | 0.77 ms | 20.1 MB | 13.9 MB | 13.9 MB |
-| FastVLM | 0.05 ms | 0.21 ms | 1.04 ms | 10.0 MB | 9.3 MB | 6.4 MB |
-| gemma4 | 0.13 ms | 0.22 ms | 1.06 ms | 76.9 MB | 76.6 MB | 56.0 MB |
+| Qwen3 | 0.14 ms | 0.26 ms | 1.21 ms | 31.3 MB | 30.7 MB | 25.7 MB |
+| Qwen2_5 | 0.14 ms | 0.27 ms | 1.19 ms | 31.1 MB | 24.0 MB | 25.8 MB |
+| Qwen2_5_VL | 0.14 ms | 0.26 ms | 1.22 ms | 31.4 MB | 25.8 MB | 26.0 MB |
+| Qwen2_5_Omni | 0.14 ms | 0.27 ms | 1.23 ms | 31.6 MB | 24.0 MB | 25.8 MB |
+| Qwen3_VL | 0.14 ms | 0.26 ms | 1.21 ms | 31.3 MB | 27.1 MB | 23.3 MB |
+| Qwen3_ASR | 0.14 ms | 0.26 ms | 1.22 ms | 31.4 MB | 27.2 MB | 26.0 MB |
+| Qwen3_Embedding | 0.14 ms | 0.27 ms | 1.19 ms | 31.5 MB | 27.1 MB | 23.3 MB |
+| Qwen3_Reranker | 0.14 ms | 0.26 ms | 1.18 ms | 31.4 MB | 27.1 MB | 20.8 MB |
+| Qwen3_TTS | 0.14 ms | 0.26 ms | 1.20 ms | 31.5 MB | 27.1 MB | 25.9 MB |
+| GME-Qwen2-VL | 0.14 ms | 0.26 ms | 1.21 ms | 31.2 MB | 27.1 MB | 23.3 MB |
+| InternVLM | 0.14 ms | 0.26 ms | 1.22 ms | 31.3 MB | 30.7 MB | 26.0 MB |
+| HY_MT_1_5 | 0.14 ms | 0.27 ms | 1.28 ms | 27.6 MB | 23.5 MB | 22.2 MB |
+| Janus_Pro | 0.15 ms | 0.31 ms | 1.35 ms | 24.0 MB | 17.6 MB | 16.9 MB |
+| SmolVLM | 0.13 ms | 0.30 ms | 1.29 ms | 13.2 MB | 9.6 MB | 8.2 MB |
+| SmolVLM2 | 0.13 ms | 0.29 ms | 1.44 ms | 13.2 MB | 5.7 MB | 7.6 MB |
+| glm_edge | 0.13 ms | 0.25 ms | 1.20 ms | 15.4 MB | 12.5 MB | 12.4 MB |
+| MiniCPM_V_4 | 0.08 ms | 0.15 ms | 0.79 ms | 17.0 MB | 13.8 MB | 12.3 MB |
+| FastVLM | 0.09 ms | 0.23 ms | 1.18 ms | 9.5 MB | 9.2 MB | 6.3 MB |
+| gemma4 | 0.09 ms | 0.20 ms | 1.12 ms | 60.5 MB | 60.0 MB | 48.2 MB |
 
 ### 8.2 峰值内存优化
 
-原始的 meta-pytorch/tokenizers 用 `nlohmann/json` 把整个 `tokenizer.json` 解析成内存 DOM 树，加载时峰值内存巨大（Qwen3 约 89 MB、gemma4 约 240 MB）。本仓库通过以下四步把峰值内存压到原来的 1/3 左右：
+原始的 meta-pytorch/tokenizers 用 `nlohmann/json` 把整个 `tokenizer.json` 解析成内存 DOM 树，加载时峰值内存巨大（Qwen3 约 89 MB、gemma4 约 240 MB）。本仓库通过以下手段把峰值内存压到原来的 1/3 左右：
 
 | # | 优化手段 | 原理 |
 |:-:|:---------|:-----|
@@ -378,24 +378,59 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 | 2 | **手写 JSON 扫描器替代 DOM 树** | `vocab`/`merges` 两个最大 section（十几万条目）用 `find_key_value` / `skip_json_string` / `decode_json_string` 直接流式扫描，不构建 JSON 节点树，消除 nlohmann ~45 MB（或 yyjson ~48 MB）的节点树开销。仅 normalizer/pretokenizer 等小配置段用 nlohmann 解析子区间。 |
 | 3 | **MergeMap 扁平化** | merge 规则从 `std::unordered_map<pair,pair,PairHash>` 改为排序 `std::vector<MergeEntry>`，查询用 `std::lower_bound`，消除哈希表节点与桶的开销。 |
 | 4 | **索引字段瘦身** | `BuilderElement` 的 `element_offset` / `original_index` 从 `size_t`(8B) 改为 `uint32_t`(4B)，vocab 十几万条目各省 8 字节。 |
+| 5 | **MergeEntry 三字段 uint32 化** | merge 规则的 `fid`/`sid`/`mid` 从 `uint64_t` 改为 `uint32_t`（vocab id 均 < 2^32），结构体 32B → 16B，merge_map_ 常驻内存减半。 |
+| 6 | **vocab 扫描 arena + string_view** | 构建期用一个连续 `std::string arena` 承载所有 token 字节，`decode_json_string_into` 直接写 arena 返回 `string_view`，消除每 token 一个 `std::string` 对象（32B 头 + malloc 碎片）的双份存储。 |
+| 7 | **tp.reserve 精确计数** | vocab 扫描先做纯指针预扫描精确数出 entry 数再 reserve，替代 `len/10` 的粗估（后者在 gemma4 上过度预留 ~7 MB）。 |
+| 8 | **builder 双数组错峰** | `StringIntegerMap::init` 先完整构建并释放 string 侧索引，再重新遍历构建 integer 侧，避免两个 ~15 MB 的 builder 数组同时存活。 |
 
-**优化前后峰值 RSS 对比**（平均值，40,000 条文本批量编码）：
+**峰值 RSS 对比**（平均值，40,000 条文本批量编码）：
 
-| 平台 | 优化前 RSS | 优化后 RSS | 降幅 |
-|:-----|----------:|----------:|-----:|
-| x86_64 | 77.0 MB | 28.6 MB | -48.4 MB（62.9%） |
-| Linux aarch64（RK3588） | 80.2 MB | 27.6 MB | -52.6 MB（65.6%） |
-| Android（RK3576） | 49.3 MB | 22.1 MB | -27.2 MB（55.2%） |
+| 平台 | meta-pytorch/tokenizers 上游原版 | 改造后目前 | 降幅 |
+|:-----|-------:|----------:|-----:|
+| x86_64 | 77.0 MB | 26.1 MB | -50.9 MB（66.1%） |
+| Linux aarch64（RK3588） | 80.2 MB | 23.7 MB | -56.5 MB（70.4%） |
+| Android（RK3576） | 49.3 MB | 21.4 MB | -27.9 MB（56.6%） |
 
-典型大模型单点对比（RK3588）：
+典型大模型单点对比（gemma4 词表最大，262K vocab，受益最明显）：
 
-| 模型 | 优化前 RSS | 优化后 RSS | 降幅 |
-|:-----|----------:|----------:|-----:|
-| Qwen3（151K vocab） | 88.9 MB | 29.6 MB | -59.3 MB（66.7%） |
-| gemma4（262K vocab） | 240.5 MB | 76.6 MB | -163.9 MB（68.1%） |
-| SmolVLM（49K vocab） | 31.4 MB | 6.2 MB | -25.2 MB（80.3%） |
+| 平台 | meta-pytorch/tokenizers 上游原版 | 改造后目前 | 降幅 |
+|:-----|-------:|----------:|-----:|
+| x86_64 | 242.1 MB | 60.5 MB | -181.6 MB（75.0%） |
+| Linux aarch64（RK3588） | 240.5 MB | 60.0 MB | -180.5 MB（75.1%） |
+| Android（RK3576） | 137.9 MB | 48.2 MB | -89.7 MB（65.1%） |
 
-> 注：gemma4 词汇量最大（约 262K），优化后仍是最占内存的模型，但其 76.6 MB 主要来自不可压缩的词表双向索引（token→ID + ID→token）本身，而非 JSON 解析开销。
+> 注：gemma4 词汇量最大（约 262K），改造后 60 MB 主要来自不可压缩的词表双向索引（token→ID + ID→token）本身，而非 JSON 解析开销。MergeEntry 32→16B、vocab arena 消重两项在 gemma4 上又压掉了约 16 MB，Qwen3 系列约 2~3 MB，词表越大的模型收益越明显。
+
+**三方案峰值内存对比**（x86_64 峰值 RSS，逐模型）：
+
+| 模型 | llama.cpp (GGUF) | meta-pytorch/tokenizers 上游原版 | 本仓库（改造后） |
+|:-----|-----:|-----:|-----:|
+| Qwen3 | 51.6 MB | 91.2 MB | 31.3 MB |
+| Qwen2_5_Omni | 51.6 MB | 91.2 MB | 31.6 MB |
+| GME-Qwen2-VL | 51.6 MB | 91.5 MB | 31.2 MB |
+| Qwen2_5 | 51.6 MB | 91.4 MB | 31.1 MB |
+| Qwen3_VL | 51.6 MB | 91.4 MB | 31.3 MB |
+| Qwen2_5_VL | 51.6 MB | 91.3 MB | 31.4 MB |
+| Qwen3_Embedding | 51.6 MB | 91.5 MB | 31.5 MB |
+| Qwen3_Reranker | 51.6 MB | 91.2 MB | 31.4 MB |
+| InternVLM | 51.6 MB | 91.2 MB | 31.3 MB |
+| HY_MT_1_5 | 43.9 MB | 75.2 MB | 27.6 MB |
+| Janus_Pro | 34.8 MB | 63.8 MB | 24.0 MB |
+| glm_edge | 30.2 MB | 53.1 MB | 15.4 MB |
+| SmolVLM | 19.4 MB | 32.8 MB | 13.2 MB |
+| SmolVLM2 | 19.4 MB | 32.9 MB | 13.2 MB |
+| MiniCPM_V_4 | 15.5 MB | 54.9 MB | 17.0 MB |
+| FastVLM | 7.9 MB | 31.4 MB | 9.5 MB |
+| gemma4 | 124.0 MB | 242.1 MB | 60.5 MB |
+
+> **三路对比结论**：
+> - **BPE 模型**（前 15 个 + gemma4）：改造后比 meta-pytorch 上游原版省 39%~51%（gemma4 最显著，242.1 → 60.5 MB），比 llama.cpp 省 31%~51%。meta-pytorch 上游原版因 nlohmann DOM 树开销峰值最高（91 MB），llama.cpp 居中（51.6 MB），本仓库最低（31 MB）。
+> - **SPM 模型**（MiniCPM_V_4、FastVLM）：本仓库因 SentencePiece 双路径 + protobuf 生态常驻开销，略高于 llama.cpp 原方案（+1.5~1.6 MB），但仍远低于 meta-pytorch 上游原版（54.9 → 17.0、31.4 → 9.5 MB）。换来的是零 GGUF 格式转换、直接加载 tokenizer.json、精度 100%。
+> - **整体平均**：meta-pytorch 上游原版 82.8 MB → llama.cpp 44.7 MB → 本仓库 27.2 MB。本仓库比上游原版降 67%，比 llama.cpp 降 39%。
+
+**构建期峰值**（valgrind massif，x86 Debug，纯 heap 不含 mmap/栈）：
+
+第 7、8 项进一步压低了加载瞬间的峰值。gemma4 构建期峰值从 58.8 MB → **41.7 MB（-29%）**，其中 `tp.reserve` 精确化省 10.3 MB、builder 错峰省 10.5 MB；加载完成后的稳态堆 14.8 MB 不变。Qwen3 构建期峰值 24.3 MB / 稳态 6.3 MB，规律一致。构建期峰值只影响「加载那一瞬间」，不影响加载后的推理期常驻内存。
 
 ---
 
