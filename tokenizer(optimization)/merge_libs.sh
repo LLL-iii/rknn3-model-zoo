@@ -14,15 +14,12 @@ ar -x "${BUILD_DIR}/libtokenizer.a"
 ar -x "${HF_BUILD_DIR}/libtokenizers.a"
 ar -x "${HF_BUILD_DIR}/sp-build/src/libsentencepiece.a"
 
-echo "[merge] unpacking re2..."
-if [ -f "${HF_BUILD_DIR}/third-party/re2/libre2.a" ]; then
-    ar -x "${HF_BUILD_DIR}/third-party/re2/libre2.a"
-fi
-
-# Abseil is NOT unpacked here because sentencepiece uses its internal
-# SPM_ABSL_PROVIDER=internal stubs. The 91 libabsl_*.a in the build tree
-# are compiled by CMake but never actually needed at link time — unpacking
-# them would inject ~11 MB of dead code into the merged archive.
+# PCRE2 is the single regex engine (RE2 + abseil were removed to enable C++11
+# builds).  Its symbols live in regex_lookahead (Pcre2Regex/StdRegex adapters)
+# and pcre2-8-static (the PCRE2 engine itself); both must be merged in.
+echo "[merge] unpacking regex engine (PCRE2)..."
+ar -x "${HF_BUILD_DIR}/libregex_lookahead.a"
+ar -x "${HF_BUILD_DIR}/third-party/pcre2/libpcre2-8.a"
 
 echo "[merge] stripping debug sections..."
 for f in *.o; do

@@ -17,7 +17,6 @@
 
 // Third Party
 #include <nlohmann/json.hpp>
-#include <re2/re2.h>
 
 // Local
 #include <pytorch/tokenizers/regex.h>

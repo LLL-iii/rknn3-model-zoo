@@ -19,7 +19,7 @@ HF_MIRROR = "https://hf-mirror.com"
 os.environ["HF_ENDPOINT"] = HF_MIRROR
 
 # Android board paths
-ANDROID_DEMO   = "/data/local/tmp/tokenizer_android/demo/tokenize_demo"
+ANDROID_DEMO   = "/data/local/tmp/tokenizer_android_arm64-v8a/demo/tokenize_demo"
 ANDROID_MODELS = "/data/local/tmp/models"
 ANDROID_DATA   = "/data/local/tmp/tokenizer_test_data"
 

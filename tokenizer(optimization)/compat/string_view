@@ -1,0 +1,178 @@
+// C++11-compatible std::string_view.
+//
+// This header shadows <string_view> via -I compat.  In C++17+ builds it simply
+// forwards to the real <string_view> (via #include_next); in C++11 builds it
+// provides the subset of std::string_view used by this project.
+//
+// IMPORTANT for libc++: its <string> header internally #includes <string_view>
+// before std::basic_string is fully defined.  This forces the C++11
+// implementation below to avoid touching std::string in a way that requires a
+// complete type at include time: the std::string constructor and the
+// std::string conversion operator are templates (parameterized on the
+// allocator), which are only instantiated at the call site where std::string is
+// guaranteed complete.
+#ifndef TOKENIZER_COMPAT_STRING_VIEW_H_
+#define TOKENIZER_COMPAT_STRING_VIEW_H_
+
+#if __cplusplus >= 201703L
+#include_next <string_view>
+#elif defined(_LIBCPP_VERSION)
+// libc++ (Android NDK / Apple): its <string> header internally depends on
+// basic_string_view (aliased __self_view) even BEFORE C++17, so we must let
+// libc++'s own <string_view> through — it defines basic_string_view in all
+// modes.  libc++ only exposes the std::string_view alias in C++17, so we add
+// it back here for our own code.
+#include_next <string_view>
+namespace std {
+using string_view = basic_string_view<char>;
+}
+#else
+
+// <ostream> must NOT be included from here: libc++'s <string> includes
+// <string_view> before basic_string is complete, and <ostream> would pull in
+// <locale>, which instantiates basic_string -> compile error.  <iosfwd> gives
+// us basic_ostream + streamsize for the operator<< declaration; the template is
+// only instantiated at call sites where <ostream> is already complete.
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
+#include <iosfwd>
+#include <stdexcept>
+
+namespace std {
+
+class string_view {
+ public:
+  typedef char value_type;
+  typedef const char* const_iterator;
+  typedef const_iterator iterator;
+  typedef std::size_t size_type;
+
+  string_view() noexcept : data_(nullptr), size_(0) {}
+  string_view(const char* s) : data_(s), size_(s ? std::strlen(s) : 0) {}
+  string_view(const char* s, size_type n) : data_(s), size_(n) {}
+  template <class Allocator>
+  string_view(const std::basic_string<char, std::char_traits<char>, Allocator>& s)
+      : data_(s.data()), size_(s.size()) {}
+
+  const_iterator begin() const noexcept { return data_; }
+  const_iterator end() const noexcept { return data_ + size_; }
+
+  const char* data() const noexcept { return data_; }
+  size_type size() const noexcept { return size_; }
+  size_type length() const noexcept { return size_; }
+  bool empty() const noexcept { return size_ == 0; }
+
+  const char& front() const { return data_[0]; }
+  const char& back() const { return data_[size_ - 1]; }
+  const char& operator[](size_type i) const { return data_[i]; }
+
+  string_view substr(size_type pos = 0, size_type n = npos) const {
+    if (pos > size_) throw std::out_of_range("string_view::substr");
+    return string_view(data_ + pos, std::min(n, size_ - pos));
+  }
+
+  void remove_prefix(size_type n) { data_ += n; size_ -= n; }
+  void remove_suffix(size_type n) { size_ -= n; }
+
+  int compare(string_view v) const noexcept {
+    const size_type n = std::min(size_, v.size_);
+    int r = (n == 0) ? 0 : std::memcmp(data_, v.data_, n);
+    if (r != 0) return r;
+    if (size_ == v.size_) return 0;
+    return size_ < v.size_ ? -1 : 1;
+  }
+
+  size_type find(char c, size_type pos = 0) const noexcept {
+    if (pos >= size_) return npos;
+    const void* p = std::memchr(data_ + pos, static_cast<unsigned char>(c),
+                                size_ - pos);
+    return p ? static_cast<const char*>(p) - data_ : npos;
+  }
+
+  size_type find(string_view sv, size_type pos = 0) const noexcept {
+    if (pos > size_) return npos;
+    if (sv.size_ > size_ - pos) return npos;
+    if (sv.size_ == 0) return pos;
+    for (size_type i = pos; i + sv.size_ <= size_; ++i) {
+      if (std::memcmp(data_ + i, sv.data_, sv.size_) == 0) return i;
+    }
+    return npos;
+  }
+
+  size_type find_first_of(string_view sv, size_type pos = 0) const noexcept {
+    for (size_type i = pos; i < size_; ++i) {
+      for (size_type j = 0; j < sv.size_; ++j) {
+        if (data_[i] == sv.data_[j]) return i;
+      }
+    }
+    return npos;
+  }
+
+  template <class Allocator>
+  explicit operator std::basic_string<char, std::char_traits<char>, Allocator>()
+      const {
+    return std::basic_string<char, std::char_traits<char>, Allocator>(data_,
+                                                                      size_);
+  }
+
+  // Used as the default substr() length; a scoped enum avoids the ODR issue
+  // that a static constexpr member would have in C++11 headers.
+  enum : size_type { npos = static_cast<size_type>(-1) };
+
+ private:
+  const char* data_;
+  size_type size_;
+};
+
+inline bool operator==(string_view a, string_view b) noexcept {
+  return a.size() == b.size() &&
+         (a.size() == 0 || std::memcmp(a.data(), b.data(), a.size()) == 0);
+}
+inline bool operator!=(string_view a, string_view b) noexcept {
+  return !(a == b);
+}
+inline bool operator<(string_view a, string_view b) noexcept {
+  return a.compare(b) < 0;
+}
+inline bool operator<=(string_view a, string_view b) noexcept {
+  return a.compare(b) <= 0;
+}
+inline bool operator>(string_view a, string_view b) noexcept {
+  return a.compare(b) > 0;
+}
+inline bool operator>=(string_view a, string_view b) noexcept {
+  return a.compare(b) >= 0;
+}
+
+template <>
+struct hash<string_view> {
+  size_t operator()(string_view s) const noexcept {
+    // FNV-1a
+    size_t h = 1469598103934665603ULL;
+    for (string_view::const_iterator it = s.begin(); it != s.end(); ++it) {
+      h ^= static_cast<unsigned char>(*it);
+      h *= 1099511628211ULL;
+    }
+    return h;
+  }
+};
+
+} // namespace std
+
+// Template so it is only instantiated where <ostream> is complete.
+// Uses ptrdiff_t instead of streamsize: libc++'s <iosfwd> (which is all this
+// header includes) does not define std::streamsize, but basic_ostream::write
+// takes streamsize which is a typedef for ptrdiff_t.
+namespace std {
+template <class CharT, class Traits>
+std::basic_ostream<CharT, Traits>& operator<<(
+    std::basic_ostream<CharT, Traits>& os, string_view sv) {
+  os.write(sv.data(), static_cast<std::ptrdiff_t>(sv.size()));
+  return os;
+}
+} // namespace std
+
+#endif // __cplusplus >= 201703L
+
+#endif // TOKENIZER_COMPAT_STRING_VIEW_H_

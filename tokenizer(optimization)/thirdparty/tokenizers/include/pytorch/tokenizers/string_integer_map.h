@@ -236,11 +236,16 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
   bucket_count_ = size_ = map.size();
 
   struct BuilderElement {
-    std::uint64_t integer = 0;
+    std::uint64_t integer;
     std::string_view string;
-    std::size_t hash = 0;
-    std::uint32_t element_offset = 0;   // < 2^32 (data size < 4 GB)
-    std::uint32_t original_index = 0;   // < 2^32 (vocab < 4G entries)
+    std::size_t hash;
+    std::uint32_t element_offset;
+    std::uint32_t original_index;
+
+    BuilderElement() : integer(0), hash(0), element_offset(0), original_index(0) {}
+    BuilderElement(std::uint64_t i, std::string_view s, std::size_t h,
+                   std::uint32_t eo, std::uint32_t oi)
+        : integer(i), string(s), hash(h), element_offset(eo), original_index(oi) {}
   };
 
   std::vector<BuilderElement> builder_string_elements;
@@ -255,7 +260,9 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
   std::size_t total_string_size = 0;
 
   std::size_t idx = 0;
-  for (const auto& [str, integer] : map) {
+  for (const auto& entry : map) {
+    const auto& str = entry.first;
+    const auto& integer = entry.second;
     total_string_size += str.size();
     largest_string_size = std::max(largest_string_size, str.size());
     largest_integer = std::max(largest_integer, integer);
@@ -426,7 +433,9 @@ Error StringIntegerMap<TStringHash, TIntegerHash, TAllocator>::init(
   builder_integer_elements.reserve(map.size());
   {
     std::size_t idx = 0;
-    for (const auto& [str, integer] : map) {
+    for (const auto& entry : map) {
+      const auto& str = entry.first;
+      const auto& integer = entry.second;
       builder_integer_elements.push_back(
           {integer, str, integer_hasher_(integer), 0,
            static_cast<std::uint32_t>(idx)});

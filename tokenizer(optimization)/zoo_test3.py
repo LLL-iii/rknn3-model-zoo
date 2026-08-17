@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 TOKENIZE_DEMO = os.path.join(os.path.dirname(__file__),
-    "build", "build_tokenizer_linux_x86_Release", "demo", "tokenize_demo")
+    "install", "tokenizer_linux_x86", "demo", "tokenize_demo")
 
 MODELS = {
     "Qwen3":           ("Qwen/Qwen3-1.7B",              None,
@@ -250,7 +250,7 @@ def test_one(py_tok, save_dir, text):
     py_ids = get_py_ids(py_tok, text)
     try:
         proc = subprocess.run(
-            [TOKENIZE_DEMO, "-t", save_dir, "-p", text, "--show-count"],
+            [TOKENIZE_DEMO, "-t", save_dir, "-p", text, "--show-count", "--debug"],
             capture_output=True, text=True, timeout=30)
         demo_output = proc.stdout.splitlines()
     except Exception as e:

@@ -12,11 +12,11 @@
 # It should also be cmake-lint clean.
 #
 cmake_minimum_required(VERSION 3.18)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 project(Tokenizers)
 
-# ---- Size optimisation (propagated to all sub-targets: re2, sentencepiece, etc.) ----
+# ---- Size optimisation (propagated to all sub-targets: sentencepiece, etc.) ----
 set(CMAKE_CXX_FLAGS_RELEASE
     "${CMAKE_CXX_FLAGS_RELEASE} -Os -g0 -ffunction-sections -fdata-sections")
 set(CMAKE_C_FLAGS_RELEASE
@@ -58,22 +58,8 @@ if(NOT MSVC)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-attributes")
 endif()
 
-set(ABSL_ENABLE_INSTALL ON)
-set(ABSL_PROPAGATE_CXX_STD ON)
-
 set(_pic_flag ${CMAKE_POSITION_INDEPENDENT_CODE})
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp)
-
-# Cygwin: abseil synchronization primitives don't compile (pthread_t is
-# pointer, no futex).  Link in stub implementations from cygwin_stubs.cc.
-if(CMAKE_SYSTEM_NAME STREQUAL "CYGWIN" AND TARGET synchronization)
-  target_sources(synchronization PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp/absl/synchronization/internal/cygwin_stubs.cc)
-endif()
-
-add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2)
 
 if(NOT DEFINED SPM_BUILD_TEST)
   set(SPM_BUILD_TEST OFF CACHE BOOL "")
@@ -98,7 +84,6 @@ set(tokenizers_source_files
     ${CMAKE_CURRENT_SOURCE_DIR}/src/normalizer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/post_processor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pre_tokenizer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/re2_regex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/regex.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sentencepiece.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/token_decoder.cpp
@@ -107,13 +92,12 @@ set(tokenizers_source_files
 file(GLOB unicode_source_files
      ${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/src/*.cpp
 )
-
 add_library(
   tokenizers STATIC ${tokenizers_source_files} ${unicode_source_files}
 )
 add_library(tokenizers::tokenizers ALIAS tokenizers)
 
-# Using abseil from sentencepiece/third_party
+# sentencepiece uses its internal SPM_ABSL_PROVIDER=internal stubs
 target_include_directories(
   tokenizers
   PUBLIC
@@ -121,18 +105,23 @@ target_include_directories(
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/pytorch/tokenizers>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/sentencepiece/src>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/re2>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/json/single_include>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/abseil-cpp>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third-party/llama.cpp-unicode/include>
 )
-target_link_libraries(tokenizers PUBLIC sentencepiece-static re2::re2)
+target_link_libraries(tokenizers PUBLIC sentencepiece-static)
 
-# Enable logging
+# Enable logging.  TK_LOG_ENABLED gates whether TK_LOG compiles at all;
+# TK_MIN_LOG_LEVEL sets the minimum severity that is emitted.  Debug builds
+# enable Debug-level detail (token-level tracing); Release builds only
+# emit Info+ (model summary / errors).
 if(TOKENIZERS_ENABLE_LOGGING)
   target_compile_definitions(tokenizers PUBLIC TK_LOG_ENABLED)
+  if(_is_build_type_debug)
+    target_compile_definitions(tokenizers PUBLIC TK_MIN_LOG_LEVEL=Debug)
+  else()
+    target_compile_definitions(tokenizers PUBLIC TK_MIN_LOG_LEVEL=Info)
+  endif()
 endif()
-target_compile_definitions(tokenizers PUBLIC TK_LOG_LEVEL=${TOKENIZERS_LOG_LEVEL})
 
 if(SUPPORT_REGEX_LOOKAHEAD)
   set(PCRE2_STATIC_PIC ON)
@@ -214,11 +203,23 @@ endif()
 
 # Installation rules
 include(GNUInstallDirs)
+# CMake 4.x: when sentencepiece/pcre2 subdirectories also include GNUInstallDirs,
+# sentencepiece's own plain `set(CMAKE_INSTALL_INCLUDEDIR ...)` (no CACHE) can
+# leave these three cache variables empty.  Fall back to the standard defaults.
+if(NOT CMAKE_INSTALL_INCLUDEDIR)
+  set(CMAKE_INSTALL_INCLUDEDIR "include")
+endif()
+if(NOT CMAKE_INSTALL_LIBDIR)
+  set(CMAKE_INSTALL_LIBDIR "lib")
+endif()
+if(NOT CMAKE_INSTALL_BINDIR)
+  set(CMAKE_INSTALL_BINDIR "bin")
+endif()
 
 if(NOT TOKENIZERS_BUILD_PYTHON)
   # Install the library and its dependencies
   install(
-    TARGETS tokenizers re2 sentencepiece-static
+    TARGETS tokenizers sentencepiece-static
     EXPORT tokenizers-targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}

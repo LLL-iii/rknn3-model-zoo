@@ -27,6 +27,7 @@ static void print_usage_information(const char * argv0) {
     printf("    -t MODEL_DIR, --tokenizer MODEL_DIR              path to HuggingFace model directory.\n");
     printf("    -p PROMPT, --prompt PROMPT                       read prompt from the argument.\n");
     printf("    --show-count                                     print the total number of tokens.\n");
+    printf("    --debug                                          print every token id and its piece (default: summary only).\n");
 }
 
 static std::vector<std::string> ingest_args(int raw_argc, char ** raw_argv) {
@@ -50,6 +51,7 @@ int main(int raw_argc, char ** raw_argv) {
     }
 
     bool show_token_count = false;
+    bool debug = false;
     const char * tokenizer_path = NULL;
     const char * prompt_arg = NULL;
     bool tokenizer_path_set = false;
@@ -89,6 +91,9 @@ int main(int raw_argc, char ** raw_argv) {
         else if (arg == "--show-count") {
             show_token_count = true;
         }
+        else if (arg == "--debug") {
+            debug = true;
+        }
         else {
             printf("Error: unknown option '%s'\n", argv[iarg].c_str());
             return 1;
@@ -113,6 +118,23 @@ int main(int raw_argc, char ** raw_argv) {
         printf("Error: could not create Tokenizer or load failed.\n");
         delete tokenizer;
         return 1;
+    }
+
+    // ── Model summary ────────────────────────────────────────────────
+    // Printed only in single-prompt mode.  Batch mode's stdout is a machine
+    // protocol ("n id1 id2 ...") that parsers read field-by-field, so any
+    // non-numeric leading line would shift every result off by one.
+    if (!stdin_batch && !stdin_decode) {
+        VocabInfo vocab_info;
+        tokenizer->GetVocabInfo(&vocab_info);
+        printf("tokenizer_type: %s\n", tokenizer->GetBackendType());
+        printf("vocab_size: %d\n", vocab_info.vocab_size);
+        for (int i = 0; i < vocab_info.n_special_bos_id; i++)
+            printf("special_bos_id[%d]: %d (%s)\n", i, vocab_info.special_bos_id[i],
+                   tokenizer->TokenToPiece(vocab_info.special_bos_id[i]).c_str());
+        for (int i = 0; i < vocab_info.n_special_eos_id; i++)
+            printf("special_eos_id[%d]: %d (%s)\n", i, vocab_info.special_eos_id[i],
+                   tokenizer->TokenToPiece(vocab_info.special_eos_id[i]).c_str());
     }
 
     // ── Batch mode: length-prefixed, one text per line ──────────────
@@ -153,6 +175,15 @@ int main(int raw_argc, char ** raw_argv) {
             if (n < 0) {
                 printf("ERR\n");
                 continue;
+            }
+            if (debug) {
+                // Token-level detail goes to stderr so stdout stays
+                // machine-parseable ("n id1 id2 ...").
+                fprintf(stderr, "[debug] %d tokens:", n);
+                for (int i = 0; i < n; i++)
+                    fprintf(stderr, " %d:'%s'", buf[i],
+                            tokenizer->TokenToPiece(buf[i]).c_str());
+                fprintf(stderr, "\n");
             }
             printf("%d", n);
             for (int i = 0; i < n; i++)
@@ -200,15 +231,6 @@ int main(int raw_argc, char ** raw_argv) {
     // ── Single-prompt mode (original behavior) ────────────────────────
     std::string prompt = prompt_arg;
 
-    VocabInfo vocab_info;
-    tokenizer->GetVocabInfo(&vocab_info);
-    printf("vocab_info: vocab_size=%d n_special_bos_id=%d n_special_eos_id=%d\n",
-           vocab_info.vocab_size, vocab_info.n_special_bos_id, vocab_info.n_special_eos_id);
-    for (int i = 0; i < vocab_info.n_special_bos_id; i++)
-        printf("special_bos_id[%d] = %d\n", i, vocab_info.special_bos_id[i]);
-    for (int i = 0; i < vocab_info.n_special_eos_id; i++)
-        printf("special_eos_id[%d] = %d\n", i, vocab_info.special_eos_id[i]);
-
     const int n_tokens_max = prompt.size() + 3;
     int32_t* tokens = (int32_t*)malloc(n_tokens_max * sizeof(int32_t));
     int token_size = tokenizer->Tokenize(
@@ -220,9 +242,12 @@ int main(int raw_argc, char ** raw_argv) {
     if (token_size == 0)
         printf("(no tokens)\n");
 
-    for (int i = 0; i < token_size; i++)
-        printf("%6d -> '%s'\n", tokens[i],
-               (tokenizer->TokenToPiece(tokens[i])).c_str());
+    // Token-level detail only in --debug mode (helps locate encoding issues).
+    if (debug) {
+        for (int i = 0; i < token_size; i++)
+            printf("%6d -> '%s'\n", tokens[i],
+                   (tokenizer->TokenToPiece(tokens[i])).c_str());
+    }
 
     printf("Decode: %s\n", (tokenizer->Decode(tokens, token_size)).c_str());
     if (show_token_count)

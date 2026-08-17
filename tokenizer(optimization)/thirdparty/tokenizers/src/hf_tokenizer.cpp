@@ -360,7 +360,6 @@ Error HFTokenizer::load(const std::string& path) {
     return Error::LoadFailure;
   }
   // ── added_tokens (small; nlohmann parses the sub-range) ───────
-  fprintf(stderr, "STAGE:specials\n"); fflush(stderr);
   {
     auto rg = find_key_value(data, data_len, "added_tokens");
     if (rg.first) {
@@ -390,7 +389,6 @@ Error HFTokenizer::load(const std::string& path) {
   }
 
   // ── vocab: hand-scan "key": uint pairs ────────────────────────
-  fprintf(stderr, "STAGE:vocab\n"); fflush(stderr);
   {
     auto rg = find_key_value(data, data_len, "vocab");
     if (rg.first) {
@@ -445,17 +443,14 @@ Error HFTokenizer::load(const std::string& path) {
         if (p < e && *p == ',') { ++p; continue; }
         break;
       }
-      fprintf(stderr, "DEBUG vocab parsed=%zu entries\n", tp.size());
       auto r = detail::build_token_map(std::move(tp));
       if (!r.ok()) { munmap((void*)data, data_len); return r.error(); }
       token_map_.emplace(std::move(*r));
     }
   }
   vocab_size_ = token_map_->size() + special_token_map_->size();
-  fprintf(stderr, "DEBUG vocab_size=%d\n", vocab_size_);
 
   // ── merges: hand-scan "a b" string array ──────────────────────
-  fprintf(stderr, "STAGE:merges\n"); fflush(stderr);
   {
     auto rg = find_key_value(data, data_len, "merges");
     if (rg.first) {
@@ -513,7 +508,6 @@ Error HFTokenizer::load(const std::string& path) {
                   return a.fid < b.fid ||
                          (a.fid == b.fid && a.sid < b.sid);
                 });
-      fprintf(stderr, "DEBUG merges parsed=%zu entries\n", merge_map_->size());
     }
   }
 
@@ -552,7 +546,6 @@ Error HFTokenizer::load(const std::string& path) {
     }
   }
 
-  fprintf(stderr, "STAGE:free\n"); fflush(stderr);
   munmap((void*)data, data_len);
 #if defined(__GLIBC__)
   malloc_trim(0);
@@ -837,8 +830,8 @@ Error HFTokenizer::parse_special_tokens(const json& parsed_json) {
     const auto& special_tokens = parsed_json.at("added_tokens");
     auto special_token_map_result = detail::build_token_map(
         special_tokens,
-        [](const auto& it) -> std::string { return it.at("content"); },
-        [](const auto& it) -> std::uint64_t { return it.at("id"); });
+        [](const json& it) -> std::string { return it.at("content"); },
+        [](const json& it) -> std::uint64_t { return it.at("id"); });
     if (!special_token_map_result.ok()) {
       return special_token_map_result.error();
     }
@@ -968,7 +961,9 @@ Error HFTokenizer::parse_merges(const json& parsed_json) {
 
     merge_map_ = std::make_unique<detail::MergeMap>();
     for (size_t i = 0; i < merge_pairs.size(); ++i) {
-      const auto& [first, second] = merge_pairs[i];
+      const auto& merge_pair = merge_pairs[i];
+      const auto& first = merge_pair.first;
+      const auto& second = merge_pair.second;
       auto first_id = token_map_->tryGetInteger(first);
       auto second_id = token_map_->tryGetInteger(second);
       if (first_id && second_id) {
@@ -1091,7 +1086,8 @@ Error HFTokenizer::setup_special_token_ids(
   if (!bos_found || !eos_found) {
     std::vector<std::string_view> bos_c, eos_c;
     for (size_t i = 0; i < special_token_map_->size(); ++i) {
-      const auto& [token, _] = special_token_map_->getElement(i);
+      const auto& element = special_token_map_->getElement(i);
+      const auto& token = element.first;
       if (!bos_found &&
           (token.find("bos") != std::string::npos ||
            token.find("begin") != std::string::npos))

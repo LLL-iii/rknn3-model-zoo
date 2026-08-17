@@ -112,6 +112,10 @@ bool Tokenizer::GetVocabInfo(VocabInfo* info) {
     return true;
 }
 
+const char* Tokenizer::GetBackendType() const {
+    return (impl_ && impl_->useSPM) ? "SPM" : "BPE";
+}
+
 int Tokenizer::Tokenize(const char* text, int32_t text_len,
                          int32_t* tokens, int32_t max) {
     if (!impl_ || !impl_->loaded) return -1;

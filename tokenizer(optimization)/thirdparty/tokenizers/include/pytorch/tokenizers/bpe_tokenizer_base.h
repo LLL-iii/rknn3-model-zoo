@@ -11,6 +11,7 @@
 #pragma once
 
 // Standard
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,8 +27,6 @@
 #include <pytorch/tokenizers/string_integer_map.h>
 #include <pytorch/tokenizers/tokenizer.h>
 
-#include "re2/re2.h"
-
 namespace tokenizers {
 namespace detail {
 
@@ -37,11 +36,11 @@ template <typename TToken, typename TRank>
 static Result<TokenMap> build_token_map(
     std::vector<std::pair<TToken, TRank>> container) {
   static_assert(
-      std::is_same_v<TToken, std::string> ||
-          std::is_same_v<TToken, std::string_view>,
+      std::is_same<TToken, std::string>::value ||
+          std::is_same<TToken, std::string_view>::value,
       "TToken must be std::string or std::string_view");
   static_assert(
-      std::is_integral_v<TRank> && std::is_unsigned_v<TRank>,
+      std::is_integral<TRank>::value && std::is_unsigned<TRank>::value,
       "TRank must be an unsigned integer");
 
   return TokenMap::create(container);
@@ -52,15 +51,15 @@ static Result<TokenMap> build_token_map(
     const TContainer& container,
     TTokenAccessor token_accessor,
     TRankAccessor rank_accessor) {
-  using TokenType = std::invoke_result_t<TTokenAccessor, const TContainer&>;
-  using RankType = std::invoke_result_t<TRankAccessor, const TContainer&>;
+  using TokenType = typename std::result_of<TTokenAccessor(const TContainer&)>::type;
+  using RankType = typename std::result_of<TRankAccessor(const TContainer&)>::type;
 
   static_assert(
-      std::is_same_v<TokenType, std::string> ||
-          std::is_same_v<TokenType, std::string_view>,
+      std::is_same<TokenType, std::string>::value ||
+          std::is_same<TokenType, std::string_view>::value,
       "TokenType must be std::string or std::string_view");
   static_assert(
-      std::is_integral_v<RankType> && std::is_unsigned_v<RankType>,
+      std::is_integral<RankType>::value && std::is_unsigned<RankType>::value,
       "RankType must be an unsigned integer");
 
   std::vector<std::pair<TokenType, RankType>> pairs;
@@ -92,8 +91,8 @@ inline Result<std::unique_ptr<IRegex>> build_special_token_regex(
   std::vector<std::string> tokens;
   tokens.reserve(count);
   for (std::size_t i = 0; i < count; ++i) {
-    const auto& [token, _] = special_token_map.getElement(i);
-    tokens.emplace_back(token);
+    const auto& element = special_token_map.getElement(i);
+    tokens.emplace_back(element.first);
   }
   std::unique_ptr<IRegex> matcher =
       std::make_unique<SpecialTokenMatcher>(tokens);

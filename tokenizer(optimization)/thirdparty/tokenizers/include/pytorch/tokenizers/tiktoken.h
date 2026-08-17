@@ -14,9 +14,6 @@
 // Standard
 #include <cstdint>
 
-// Third Party
-#include <re2/re2.h>
-
 // Local
 #include <pytorch/tokenizers/bpe_tokenizer_base.h>
 #include <pytorch/tokenizers/compiler.h>

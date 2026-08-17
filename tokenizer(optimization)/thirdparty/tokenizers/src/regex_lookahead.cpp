@@ -23,7 +23,7 @@ namespace tokenizers {
  */
 Result<std::unique_ptr<IRegex>> create_fallback_regex(
     const std::string& pattern) {
-  TK_LOG(Info, "Creating PCRE2 regex");
+  TK_LOG(Debug, "Creating PCRE2 regex");
   auto pcre2 = std::make_unique<Pcre2Regex>();
   auto err = pcre2->compile(pattern);
 

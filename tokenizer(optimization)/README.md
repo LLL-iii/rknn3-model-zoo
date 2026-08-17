@@ -1,13 +1,14 @@
 # RKNN3 Tokenizer
 
-基于 Meta [meta-pytorch/tokenizers](https://github.com/pytorch/executorch/tree/main/third-party/tokenizers)（BSD-3 许可证）的轻量级 C++ 分词器。原始工程依赖 C++20（`<filesystem>`、`<string_view>` 等），本仓库已完成 C++17 降级改造，可直接用 GCC 7.4 / Clang 12 编译并部署到嵌入式板端。
+基于 Meta [meta-pytorch/tokenizers](https://github.com/pytorch/executorch/tree/main/third-party/tokenizers)（BSD-3 许可证）的轻量级 C++ 分词器。原始工程依赖 C++20（`<filesystem>`、`<string_view>` 等），本仓库已完成 **C++11 降级改造**（附带 C++17/20 兼容），可直接用 GCC 4.8+ / Clang 3.4+ / NDK 等老工具链编译并部署到嵌入式板端。
 
 **特性**：
 - 直接加载 HuggingFace 模型目录（`tokenizer.json` / `tokenizer.model`），零格式转换
 - 支持 BPE (ByteLevel) 和 SentencePiece 双后端，自动检测
 - 单头文件 API，PIMPL 封装，易于集成
 - 合并静态库 **~2.6 MB**（x86_64），无运行时依赖
-- 峰值内存 **~24 MB**（板端平均），手写 JSON 扫描器 + MergeEntry 扁平化，较上游降 ~70%
+- **C++11 兼容**（自研 `string_view` / `optional` / `make_unique` 桩），去掉 RE2 + abseil，正则统一走 PCRE2
+- 峰值内存 **~19 MB**（RK3588 板端平均），手写 JSON 扫描器 + MergeEntry 扁平化，较上游降 ~70%
 - 端到端精度 100%（20 模型 × 103 深度测试 case）
 - 跨平台：Linux x86_64 / aarch64 / Android arm64-v8a / Windows (Cygwin)
 
@@ -20,20 +21,20 @@
 | 工具 | 版本 |
 |------|------|
 | CMake | ≥ 3.18 |
-| GCC / Clang | ≥ 7（支持 C++17） |
+| GCC / Clang | ≥ 4.8 / 3.4（支持 C++11） |
 | PCRE2 | ≥ 10.40（静态编译进库） |
 
 ### 1.2 编译命令
 
 ```bash
-# Linux x86_64（GCC 13 / C++17）
+# Linux x86_64（GCC 13 / C++11）
 bash build.sh -s linux -a x86 -b Release
 
-# Linux aarch64（GCC 7.4 Linaro / C++17）
+# Linux aarch64（GCC 7.4 Linaro / C++11）
 # 默认使用 /opt/toolchains/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu
 bash build.sh -s linux -a aarch64 -b Release
 
-# Android arm64-v8a（NDK r23c Clang 12 / C++17）
+# Android arm64-v8a（NDK r23c Clang 12 / C++11）
 bash build.sh -s android -a arm64-v8a -b Release
 
 # Windows（Cygwin 环境）
@@ -85,22 +86,26 @@ ls install/tokenizer_android_arm64-v8a/demo/tokenize_demo
 
 ---
 
-## 2. C++20 → C++17 降级说明
+## 2. C++20 → C++11 降级说明
 
-原始 meta-pytorch/tokenizers 要求 C++20。为了兼容 Linaro GCC 7.4（RK 芯片官方工具链）和 Android NDK r23c Clang 12，做了以下改造：
+原始 meta-pytorch/tokenizers 要求 C++20。为了兼容更老的工具链（GCC 4.8+ / Clang 3.4+ / Android NDK），做了 C++11 降级改造：
 
-| 原始（C++20） | 改造后（C++17） | 涉及文件 |
+| 原始（C++20） | 改造后（C++11） | 涉及文件 |
 |:---|:---|:---|
 | `<filesystem>` / `std::filesystem::path` | POSIX `stat()` / `access()` / 字符串拼接 | `Tokenizer.cpp`, `hf_tokenizer.cpp` |
-| `std::atomic<T> x = val;` | `std::atomic<T> x{val};` | `sentencepiece/src/util.cc` |
-| C++17 `_v` 别名 / structured binding 保留 | （GCC 7.4 原生支持） | 无需改动 |
-| `<string_view>`, `<optional>` | 标准 C++17 头文件（GCC 7.4 / Clang 12 均已自带） | 无需改动 |
-| `CMAKE_CXX_STANDARD 20` | `CMAKE_CXX_STANDARD 17` | 全部 CMakeLists.txt |
+| `std::string_view` | 自研 `compat/string_view` 桩（C++17 时 `#include_next` 转发真实头） | `compat/string_view` |
+| `std::optional` | 自研 `compat/optional` 桩（C++17 时 `#include_next` 转发真实头） | `compat/optional` |
+| `std::make_unique` | 自研 `compat/make_unique.h`（C++14+ 时 no-op） | `compat/make_unique.h` |
+| `_v` 别名（`is_same_v` 等） | `::value` 形式 | `bpe_tokenizer_base.h` |
+| `std::invoke_result_t` | `std::result_of<...>::type` | `bpe_tokenizer_base.h` |
+| structured bindings `auto [a,b]` | `.first` / `.second` 手动解包 | 多处 |
+| `CMAKE_CXX_STANDARD 20` | `CMAKE_CXX_STANDARD 11` | 全部 CMakeLists.txt |
+| RE2 + abseil-cpp（C++17 依赖） | 移除，正则统一走 PCRE2（纯 C 库） | `regex.cpp`, CMakeLists.txt |
 
 **关键要点**：
-- GCC 7.4 完全支持 C++17 的 `<string_view>`、`<optional>`、`_v` 别名、structured binding
-- 唯一不支持的是 `<filesystem>`（GCC 8+），已用 POSIX 系统调用替代
-- 不需要任何 compat shim 或 polyfill
+- 自研 compat 桩通过 `-I compat` 注入，只在 C++11 模式生效；C++17+ 模式 `#include_next` 转发到真实标准头，零功能损失
+- libc++（Android NDK）的 `<string>` 内部依赖 `basic_string_view`：compat 头在 `_LIBCPP_VERSION` 下转发 libc++ 自己的 `<string_view>` 再补 `string_view` 别名
+- 去掉 RE2 + abseil 后，库体积减小且打通 C++11 的最后障碍
 
 ---
 
@@ -228,11 +233,25 @@ int main() {
 ./tokenize_demo -t /path/to/model_dir -p "hello world!" --show-count
 ```
 
-输出：
+输出（默认只打印模型摘要 + 编码结果）：
 ```
-vocab_info: vocab_size=151669 n_special_bos_id=1 n_special_eos_id=1
-special_bos_id[0] = 151645
-special_eos_id[0] = 151645
+tokenizer_type: BPE
+vocab_size: 151669
+special_bos_id[0]: 151645 (<|im_end|>)
+special_eos_id[0]: 151645 (<|im_end|>)
+Decode: hello world!
+Total number of tokens: 3
+```
+
+加 `--debug` 打印每个 token id 及对应文本（定位编码问题用）：
+```bash
+./tokenize_demo -t /path/to/model_dir -p "hello world!" --show-count --debug
+```
+```
+tokenizer_type: BPE
+vocab_size: 151669
+special_bos_id[0]: 151645 (<|im_end|>)
+special_eos_id[0]: 151645 (<|im_end|>)
  14990 -> 'hello'
   1879 -> 'Ġworld'
      0 -> '!'
@@ -304,11 +323,11 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 |:-----|:-----|:--------|:------:|:---------:|:-----------:|:-----|
 | 原始 model_zoo | llama.cpp GGUF | x86_64 (GCC 13) | 16 | 100.00% | 1.0000 | 需要 GGUF 格式转换再加载 |
 | 原始 meta-pytorch | meta-pytorch/tokenizers | x86_64 (GCC 13, C++20) | 19 | 99.70% | 0.9976 | 上游原版，C++20，零格式转换 |
-| 改造后 | meta-pytorch/tokenizers (C++17) | RK3588 (GCC 7.4, C++17) | 19 | 100.00% | 1.0000 | 本仓库，C++17 适配，零格式转换 |
+| 改造后 | meta-pytorch/tokenizers (C++11) | RK3588 (GCC 7.4, C++11) | 19 | 100.00% | 1.0000 | 本仓库，C++11 适配，零格式转换 |
 
 ### 7.2 分模型精度
 
-| 模型 | 原始 model_zoo (GGUF) | 原始 meta-pytorch (C++20) | 改造后 (C++17, RK3588) |
+| 模型 | 原始 model_zoo (GGUF) | 原始 meta-pytorch (C++20) | 改造后 (C++11, RK3588) |
 |:-----|:---:|:---:|:---:|
 | Qwen3 | 100.00% | 99.30% | 100.00% |
 | Qwen2_5 | 100.00% | 99.30% | 100.00% |
@@ -328,9 +347,9 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 | glm_edge | 100.00% | 100.00% | 100.00% |
 | MiniCPM_V_4 | 100.00% | 100.00% | 100.00% |
 | FastVLM | 100.00% | 100.00% | 100.00% |
-| gemma4 | N/A | 100.00% | 100.00% |
+| gemma4 | 100.00% | 100.00% | 100.00% |
 
-> **说明**：原始 meta-pytorch (C++20) 在 Qwen 系列模型上的 ~99.30% 准确率来自 GCC 13 编译时 NFC normalizer 的 Unicode 组合表构建差异（约 1,400/200,000 条 ZH 文本存在 1-2 字节 token 偏差）。改造后（C++17 版本）修复了 NFC 逻辑，RK3588 上达到 100% 匹配。原始 model_zoo 使用 llama.cpp 的 GGUF 词表格式，完全不同引擎，匹配率 100%，但需要 GGUF 格式转换。
+> **说明**：原始 meta-pytorch (C++20) 在 Qwen 系列模型上的 ~99.30% 准确率来自 GCC 13 编译时 NFC normalizer 的 Unicode 组合表构建差异（约 1,400/200,000 条 ZH 文本存在 1-2 字节 token 偏差）。改造后（C++11 版本）修复了 NFC 逻辑，RK3588 / RK3576 上均达到 100% 匹配。原始 model_zoo 使用 llama.cpp 的 GGUF 词表格式，完全不同引擎，匹配率 100%，但需要 GGUF 格式转换。
 
 ---
 
@@ -338,35 +357,35 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 
 测试条件：固定输入文本长度 ~207 字符（40,000 条 EN+ZH 混合文本平均长度）。速度 = C++ batch encode 单文本耗时。内存 = tokenizer 加载模型后的峰值 RSS。
 
-| 平台 | 编译器 | CPU | 速度 (ms/text) | 峰值 RSS (MB) | 说明 |
-|:-----|:------|:----|:-----:|:-----:|:-----|
-| x86_64 | GCC 13 | Intel Core i7-14700 | 0.14 | 26.1 | PC 桌面端基准 |
-| Linux aarch64 | GCC 7.4 Linaro | RK3588 (4×A76 + 4×A55) | 0.26 | 23.7 | 嵌入式 Linux 板端 |
-| Android arm64-v8a | NDK r23c Clang 12 | RK3576 (4×A76 + 4×A55) | 1.21 | 21.4 | 嵌入式 Android 板端 |
+| 平台 | 编译器 | 速度 (ms/text) | 峰值 RSS (MB) | 说明 |
+|:-----|:------|:-----:|:-----:|:-----|
+| x86_64 | GCC 13 | 0.14 | 24.0 | PC 桌面端基准 |
+| Linux aarch64(RK3588) | GCC 7.4 Linaro | 0.26 | 19.0 | 嵌入式 Linux 板端 |
+| Android arm64-v8a(RK3576) | NDK r23c Clang 12 | 1.12 | 22.1 | 嵌入式 Android 板端 |
 
 ### 8.1 分模型性能
 
 | 模型 | x86_64 速度 | RK3588 速度 | RK3576 速度 | x86_64 RSS | RK3588 RSS | RK3576 RSS |
 |:-----|-----:|-----:|-----:|-----:|-----:|-----:|
-| Qwen3 | 0.14 ms | 0.26 ms | 1.21 ms | 31.3 MB | 30.7 MB | 25.7 MB |
-| Qwen2_5 | 0.14 ms | 0.27 ms | 1.19 ms | 31.1 MB | 24.0 MB | 25.8 MB |
-| Qwen2_5_VL | 0.14 ms | 0.26 ms | 1.22 ms | 31.4 MB | 25.8 MB | 26.0 MB |
-| Qwen2_5_Omni | 0.14 ms | 0.27 ms | 1.23 ms | 31.6 MB | 24.0 MB | 25.8 MB |
-| Qwen3_VL | 0.14 ms | 0.26 ms | 1.21 ms | 31.3 MB | 27.1 MB | 23.3 MB |
-| Qwen3_ASR | 0.14 ms | 0.26 ms | 1.22 ms | 31.4 MB | 27.2 MB | 26.0 MB |
-| Qwen3_Embedding | 0.14 ms | 0.27 ms | 1.19 ms | 31.5 MB | 27.1 MB | 23.3 MB |
-| Qwen3_Reranker | 0.14 ms | 0.26 ms | 1.18 ms | 31.4 MB | 27.1 MB | 20.8 MB |
-| Qwen3_TTS | 0.14 ms | 0.26 ms | 1.20 ms | 31.5 MB | 27.1 MB | 25.9 MB |
-| GME-Qwen2-VL | 0.14 ms | 0.26 ms | 1.21 ms | 31.2 MB | 27.1 MB | 23.3 MB |
-| InternVLM | 0.14 ms | 0.26 ms | 1.22 ms | 31.3 MB | 30.7 MB | 26.0 MB |
-| HY_MT_1_5 | 0.14 ms | 0.27 ms | 1.28 ms | 27.6 MB | 23.5 MB | 22.2 MB |
-| Janus_Pro | 0.15 ms | 0.31 ms | 1.35 ms | 24.0 MB | 17.6 MB | 16.9 MB |
-| SmolVLM | 0.13 ms | 0.30 ms | 1.29 ms | 13.2 MB | 9.6 MB | 8.2 MB |
-| SmolVLM2 | 0.13 ms | 0.29 ms | 1.44 ms | 13.2 MB | 5.7 MB | 7.6 MB |
-| glm_edge | 0.13 ms | 0.25 ms | 1.20 ms | 15.4 MB | 12.5 MB | 12.4 MB |
-| MiniCPM_V_4 | 0.08 ms | 0.15 ms | 0.79 ms | 17.0 MB | 13.8 MB | 12.3 MB |
-| FastVLM | 0.09 ms | 0.23 ms | 1.18 ms | 9.5 MB | 9.2 MB | 6.3 MB |
-| gemma4 | 0.09 ms | 0.20 ms | 1.12 ms | 60.5 MB | 60.0 MB | 48.2 MB |
+| Qwen3 | 0.14 ms | 0.26 ms | 1.12 ms | 28.8 MB | 19.2 MB | 23.5 MB |
+| Qwen2_5 | 0.14 ms | 0.26 ms | 1.16 ms | 28.7 MB | 20.8 MB | 26.0 MB |
+| Qwen2_5_VL | 0.14 ms | 0.26 ms | 1.23 ms | 28.6 MB | 20.8 MB | 25.9 MB |
+| Qwen2_5_Omni | 0.14 ms | 0.26 ms | 1.21 ms | 28.6 MB | 19.2 MB | 26.0 MB |
+| Qwen3_VL | 0.14 ms | 0.26 ms | 1.17 ms | 28.7 MB | 24.4 MB | 26.1 MB |
+| Qwen3_ASR | 0.14 ms | 0.26 ms | 1.12 ms | 28.9 MB | 19.5 MB | 26.0 MB |
+| Qwen3_Embedding | 0.14 ms | 0.26 ms | 1.17 ms | 28.8 MB | 20.8 MB | 26.1 MB |
+| Qwen3_Reranker | 0.14 ms | 0.26 ms | 1.16 ms | 28.8 MB | 20.8 MB | 26.1 MB |
+| Qwen3_TTS | 0.14 ms | 0.26 ms | 1.14 ms | 28.8 MB | 20.9 MB | 26.2 MB |
+| GME-Qwen2-VL | 0.14 ms | 0.26 ms | 1.09 ms | 28.6 MB | 19.4 MB | 22.3 MB |
+| InternVLM | 0.14 ms | 0.26 ms | 1.07 ms | 28.8 MB | 24.4 MB | 26.2 MB |
+| HY_MT_1_5 | 0.14 ms | 0.26 ms | 1.03 ms | 25.7 MB | 19.2 MB | 22.4 MB |
+| Janus_Pro | 0.17 ms | 0.34 ms | 1.33 ms | 22.0 MB | 14.0 MB | 16.4 MB |
+| SmolVLM | 0.12 ms | 0.27 ms | 0.90 ms | 12.0 MB | 5.1 MB | 8.9 MB |
+| SmolVLM2 | 0.12 ms | 0.27 ms | 0.88 ms | 11.9 MB | 5.1 MB | 8.4 MB |
+| glm_edge | 0.14 ms | 0.25 ms | 1.00 ms | 14.6 MB | 11.1 MB | 10.8 MB |
+| MiniCPM_V_4 | 0.08 ms | 0.14 ms | 0.69 ms | 15.1 MB | 10.8 MB | 13.3 MB |
+| FastVLM | 0.09 ms | 0.24 ms | 1.03 ms | 10.1 MB | 9.0 MB | 9.4 MB |
+| gemma4 | 0.09 ms | 0.20 ms | 0.92 ms | 56.2 MB | 55.7 MB | 49.2 MB |
 
 ### 8.2 峰值内存优化
 
@@ -387,46 +406,46 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 
 | 平台 | meta-pytorch/tokenizers 上游原版 | 改造后目前 | 降幅 |
 |:-----|-------:|----------:|-----:|
-| x86_64 | 77.0 MB | 26.1 MB | -50.9 MB（66.1%） |
-| Linux aarch64（RK3588） | 80.2 MB | 23.7 MB | -56.5 MB（70.4%） |
-| Android（RK3576） | 49.3 MB | 21.4 MB | -27.9 MB（56.6%） |
+| x86_64 | 77.0 MB | 24.0 MB | -53.0 MB（68.8%） |
+| Linux aarch64（RK3588） | 80.2 MB | 19.0 MB | -61.2 MB（76.3%） |
+| Android（RK3576） | 49.3 MB | 22.1 MB | -27.2 MB（55.2%） |
 
 典型大模型单点对比（gemma4 词表最大，262K vocab，受益最明显）：
 
 | 平台 | meta-pytorch/tokenizers 上游原版 | 改造后目前 | 降幅 |
 |:-----|-------:|----------:|-----:|
-| x86_64 | 242.1 MB | 60.5 MB | -181.6 MB（75.0%） |
-| Linux aarch64（RK3588） | 240.5 MB | 60.0 MB | -180.5 MB（75.1%） |
-| Android（RK3576） | 137.9 MB | 48.2 MB | -89.7 MB（65.1%） |
+| x86_64 | 242.1 MB | 56.2 MB | -185.9 MB（76.8%） |
+| Linux aarch64（RK3588） | 240.5 MB | 55.7 MB | -184.8 MB（76.8%） |
+| Android（RK3576） | 137.9 MB | 49.2 MB | -88.7 MB（64.3%） |
 
-> 注：gemma4 词汇量最大（约 262K），改造后 60 MB 主要来自不可压缩的词表双向索引（token→ID + ID→token）本身，而非 JSON 解析开销。MergeEntry 32→16B、vocab arena 消重两项在 gemma4 上又压掉了约 16 MB，Qwen3 系列约 2~3 MB，词表越大的模型收益越明显。
+> 注：gemma4 词汇量最大（约 262K），改造后 55 MB 左右主要来自不可压缩的词表双向索引（token→ID + ID→token）本身，而非 JSON 解析开销。MergeEntry 32→16B、vocab arena 消重两项在 gemma4 上又压掉了约 16 MB，Qwen3 系列约 2~3 MB，词表越大的模型收益越明显。C++11 编译后（`string_view`/`optional` 自研桩 + 更紧凑的 STL 布局）内存又进一步下降：gemma4 平均再降 ~4 MB。
 
 **三方案峰值内存对比**（x86_64 峰值 RSS，逐模型）：
 
 | 模型 | llama.cpp (GGUF) | meta-pytorch/tokenizers 上游原版 | 本仓库（改造后） |
 |:-----|-----:|-----:|-----:|
-| Qwen3 | 51.6 MB | 91.2 MB | 31.3 MB |
-| Qwen2_5_Omni | 51.6 MB | 91.2 MB | 31.6 MB |
-| GME-Qwen2-VL | 51.6 MB | 91.5 MB | 31.2 MB |
-| Qwen2_5 | 51.6 MB | 91.4 MB | 31.1 MB |
-| Qwen3_VL | 51.6 MB | 91.4 MB | 31.3 MB |
-| Qwen2_5_VL | 51.6 MB | 91.3 MB | 31.4 MB |
-| Qwen3_Embedding | 51.6 MB | 91.5 MB | 31.5 MB |
-| Qwen3_Reranker | 51.6 MB | 91.2 MB | 31.4 MB |
-| InternVLM | 51.6 MB | 91.2 MB | 31.3 MB |
-| HY_MT_1_5 | 43.9 MB | 75.2 MB | 27.6 MB |
-| Janus_Pro | 34.8 MB | 63.8 MB | 24.0 MB |
-| glm_edge | 30.2 MB | 53.1 MB | 15.4 MB |
-| SmolVLM | 19.4 MB | 32.8 MB | 13.2 MB |
-| SmolVLM2 | 19.4 MB | 32.9 MB | 13.2 MB |
-| MiniCPM_V_4 | 15.5 MB | 54.9 MB | 17.0 MB |
-| FastVLM | 7.9 MB | 31.4 MB | 9.5 MB |
-| gemma4 | 124.0 MB | 242.1 MB | 60.5 MB |
+| Qwen3 | 51.6 MB | 91.2 MB | 28.8 MB |
+| Qwen2_5_Omni | 51.6 MB | 91.2 MB | 28.6 MB |
+| GME-Qwen2-VL | 51.6 MB | 91.5 MB | 28.6 MB |
+| Qwen2_5 | 51.6 MB | 91.4 MB | 28.7 MB |
+| Qwen3_VL | 51.6 MB | 91.4 MB | 28.7 MB |
+| Qwen2_5_VL | 51.6 MB | 91.3 MB | 28.6 MB |
+| Qwen3_Embedding | 51.6 MB | 91.5 MB | 28.8 MB |
+| Qwen3_Reranker | 51.6 MB | 91.2 MB | 28.8 MB |
+| InternVLM | 51.6 MB | 91.2 MB | 28.8 MB |
+| HY_MT_1_5 | 43.9 MB | 75.2 MB | 25.7 MB |
+| Janus_Pro | 34.8 MB | 63.8 MB | 22.0 MB |
+| glm_edge | 30.2 MB | 53.1 MB | 14.6 MB |
+| SmolVLM | 19.4 MB | 32.8 MB | 12.0 MB |
+| SmolVLM2 | 19.4 MB | 32.9 MB | 11.9 MB |
+| MiniCPM_V_4 | 15.5 MB | 54.9 MB | 15.1 MB |
+| FastVLM | 7.9 MB | 31.4 MB | 10.1 MB |
+| gemma4 | 124.0 MB | 242.1 MB | 56.2 MB |
 
 > **三路对比结论**：
-> - **BPE 模型**（前 15 个 + gemma4）：改造后比 meta-pytorch 上游原版省 39%~51%（gemma4 最显著，242.1 → 60.5 MB），比 llama.cpp 省 31%~51%。meta-pytorch 上游原版因 nlohmann DOM 树开销峰值最高（91 MB），llama.cpp 居中（51.6 MB），本仓库最低（31 MB）。
-> - **SPM 模型**（MiniCPM_V_4、FastVLM）：本仓库因 SentencePiece 双路径 + protobuf 生态常驻开销，略高于 llama.cpp 原方案（+1.5~1.6 MB），但仍远低于 meta-pytorch 上游原版（54.9 → 17.0、31.4 → 9.5 MB）。换来的是零 GGUF 格式转换、直接加载 tokenizer.json、精度 100%。
-> - **整体平均**：meta-pytorch 上游原版 82.8 MB → llama.cpp 44.7 MB → 本仓库 27.2 MB。本仓库比上游原版降 67%，比 llama.cpp 降 39%。
+> - **BPE 模型**（前 15 个 + gemma4）：改造后比 meta-pytorch 上游原版省 44%~77%（gemma4 最显著，242.1 → 56.2 MB），比 llama.cpp 省 24%~55%。meta-pytorch 上游原版因 nlohmann DOM 树开销峰值最高（91 MB），llama.cpp 居中（51.6 MB），本仓库最低（28.8 MB）。
+> - **SPM 模型**（MiniCPM_V_4、FastVLM）：本仓库因 SentencePiece 双路径 + protobuf 生态常驻开销，与 llama.cpp 原方案基本持平（MiniCPM 15.1 vs 15.5、FastVLM 10.1 vs 7.9），但仍远低于 meta-pytorch 上游原版（54.9 → 15.1、31.4 → 10.1 MB）。换来的是零 GGUF 格式转换、直接加载 tokenizer.json、精度 100%。
+> - **整体平均**：meta-pytorch 上游原版 82.8 MB → llama.cpp 44.7 MB → 本仓库 25.1 MB。本仓库比上游原版降 70%，比 llama.cpp 降 44%。
 
 **构建期峰值**（valgrind massif，x86 Debug，纯 heap 不含 mmap/栈）：
 
@@ -438,8 +457,8 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 
 | 指标 | 值 |
 |------|-----|
-| 静态库体积 | **2.53 MB**（x86_64, GCC 13） / **5.28 MB**（aarch64, GCC 7.4） |
-| C++ 标准 | C++17 |
+| 静态库体积 | **~2.6 MB**（x86_64, GCC 13） / **~5.3 MB**（aarch64, GCC 7.4） |
+| C++ 标准 | **C++11**（兼容 C++17/20，compat 桩自动切换） |
 | 许可证 | BSD-3（上游 meta-pytorch/tokenizers） |
 | 运行时依赖 | 无（纯静态链接） |
 | 线程安全 | 只读操作线程安全；加载和销毁需外部同步 |
@@ -449,11 +468,11 @@ echo -e "2\n9707 11 1879 0\n108386 3837 99489 6313" | ./tokenize_demo --stdin-de
 | 组件 | 大小 |
 |------|------|
 | Tokenizers 核心（BPE 引擎 + unicode） | ~1,033 KB |
-| RE2 正则引擎 | ~492 KB |
+| PCRE2 正则引擎（替代 RE2，纯 C） | ~530 KB |
 | Protobuf-Lite（SPM 加载） | ~463 KB |
 | SentencePiece Processor | ~213 KB |
 | Tokenizer PIMPL 封装 | ~10 KB |
-| **合计** | **~2.5 MB** |
+| **合计** | **~2.2 MB 核心 + SPM 生态**（合并库 ~2.6 MB） |
 
 ---
 
@@ -475,9 +494,6 @@ python3 zoo_test3.py
 
 # 数据集精度 + 时延（EN + ZH 各 20,000）
 python3 zoo_test4.py
-
-# 往返保真度测试
-python3 zoo_test5.py
 ```
 
 ### 10.2 板端精度 + 延时 + 内存测试
@@ -499,7 +515,7 @@ done
 "
 
 # PC 端对比测试（40,000 条数据集，含 F1、延迟、峰值 RSS）
-python3 board_test4.py
+python3 board_test_aarch64.py
 # → 报告: zoo_test_result/board_test_report_linux_aarch64.md
 ```
 
@@ -520,7 +536,7 @@ python3 board_test_android.py
 
 ## 11. 常见问题
 
-### Q: 静态库为什么是 2.5 MB？
+### Q: 静态库为什么是 2.6 MB？
 
 A: 核心大小来自 BPE 引擎（nlohmann/json 模板展开）、RE2 完整编译和 SentencePiece Protobuf。去掉 SPM 可缩减至 ~1.5 MB。
 
@@ -536,9 +552,6 @@ A: GCC 7.4 代码生成不如 GCC 13，ARM64 指令编码密度也低于 x86_64�
 
 A: RK 芯片官方 BSP 使用 Linaro GCC 7.4 工具链。RK3588 板端 GLIBC 2.17，GCC 13 编译的二进制需要 GLIBC 2.38+，不兼容。
 
-### Q: 支持哪些 tokenizer 类型？
-
-A: BPE（ByteLevel）、Metaspace、SentencePiece（SPM）。不支持 Unigram / WordPiece / BPE 非 ByteLevel 变体。
 
 ---
 

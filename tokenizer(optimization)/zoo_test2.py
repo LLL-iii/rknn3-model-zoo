@@ -7,7 +7,7 @@ import sys
 
 # --- Config ---
 TOKENIZE_DEMO = os.path.join(os.path.dirname(__file__),
-    "build", "build_tokenizer_linux_x86_Release", "demo", "tokenize_demo")
+    "install", "tokenizer_linux_x86", "demo", "tokenize_demo")
 
 # {name: (hf_model_id, local_path_or_None, extra_kwargs_or_None)}
 MODELS = {
@@ -31,7 +31,7 @@ MODELS = {
     "glm_edge":        ("THUDM/glm-edge-1.5b-chat",     None, None),
     "GME-Qwen2-VL":    ("Alibaba-NLP/GME-Qwen2-VL-2B-Instruct", None, None),
 
-    # ==================== SPM (SentencePiece) — 5 models ====================
+    # ==================== SPM (SentencePiece) — 4 models ====================
     "gemma4":          ("google/gemma-4-E2B-it",         None,
                         {"trust_remote_code": True, "use_fast": False,
                          "use_saved_tok_for_comparison": True}),
@@ -44,7 +44,13 @@ MODELS = {
 }
 
 TEST_TEXTS = [
-    "hello world!",
+    "Hello, world!",
+    "The quick brown fox jumps over the lazy dog.",
+    "I've been working on AI for 3.5 years.",
+    "你好，世界！",
+    "人工智能是计算机科学的一个分支。",
+    "a\nb\tc",
+    "    多个空格    测试    ",
 ]
 
 
@@ -126,7 +132,7 @@ def main():
             cpp_error = None
             try:
                 proc = subprocess.run(
-                    [TOKENIZE_DEMO, "-t", save_dir, "-p", text, "--show-count"],
+                    [TOKENIZE_DEMO, "-t", save_dir, "-p", text, "--show-count", "--debug"],
                     capture_output=True, text=True, timeout=30)
                 demo_output = proc.stdout.splitlines()
                 demo_stderr = proc.stderr

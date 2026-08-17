@@ -18,7 +18,6 @@
 
 // Third Party
 #include <nlohmann/json.hpp>
-#include <re2/re2.h>
 
 namespace tokenizers {
 

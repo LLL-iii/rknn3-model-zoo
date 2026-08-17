@@ -703,14 +703,16 @@ util::Status SentencePieceProcessor::SampleEncode(
     std::vector<double> log_probs;
     log_probs.reserve(nbests.size());
     std::transform(nbests.begin(), nbests.end(), std::back_inserter(log_probs),
-                   [alpha](const auto &nbest) { return alpha * nbest.second; });
+                   [alpha](const NBestEncodeResult::value_type &nbest) {
+                     return alpha * nbest.second;
+                   });
 
     const double Z = log_domain::LogSum(log_probs);
     std::vector<double> probs;
     probs.reserve(log_probs.size());
     std::transform(
         log_probs.begin(), log_probs.end(), std::back_inserter(probs),
-        [Z](const auto &log_prob) { return std::exp(log_prob - Z); });
+        [Z](double log_prob) { return std::exp(log_prob - Z); });
 
     auto *mt = random::GetRandomGenerator();
     std::discrete_distribution<int> dist(probs.begin(), probs.end());

@@ -26,6 +26,9 @@ public:
 
     bool GetVocabInfo(VocabInfo* info);
 
+    // 返回分词后端类型："BPE"（tokenizer.json / HFTokenizer）或 "SPM"（SentencePiece）
+    const char* GetBackendType() const;
+
     int Tokenize(const char* text, int32_t text_len,
                  int32_t* tokens, int32_t n_tokens_max);
 
