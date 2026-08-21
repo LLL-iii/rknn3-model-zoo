@@ -1,0 +1,34 @@
+{
+  "additional_special_tokens": [
+    "<image_placeholder>",
+    "<patch_placeholder>",
+    "<|ref|>",
+    "<|/ref|>",
+    "<|det|>",
+    "<|/det|>",
+    "<|grounding|>",
+    "<|User|>",
+    "<|Assistant|>"
+  ],
+  "bos_token": {
+    "content": "<｜begin▁of▁sentence｜>",
+    "lstrip": false,
+    "normalized": true,
+    "rstrip": false,
+    "single_word": false
+  },
+  "eos_token": {
+    "content": "<｜end▁of▁sentence｜>",
+    "lstrip": false,
+    "normalized": true,
+    "rstrip": false,
+    "single_word": false
+  },
+  "pad_token": {
+    "content": "<｜▁pad▁｜>",
+    "lstrip": false,
+    "normalized": false,
+    "rstrip": false,
+    "single_word": false
+  }
+}
