@@ -87,9 +87,11 @@ nonstd::expected<Template, ErrorInfo> TemplateEnv::LoadTemplate(std::string file
     return LoadTemplateImpl<char>(this, std::move(fileName), m_filesystemHandlers, m_templateCache);
 }
 
+#ifndef JINJA2CPP_CHAT_ONLY
 nonstd::expected<TemplateW, ErrorInfoW> TemplateEnv::LoadTemplateW(std::string fileName)
 {
     return LoadTemplateImpl<wchar_t>(this, std::move(fileName), m_filesystemHandlers, m_templateWCache);
 }
+#endif // JINJA2CPP_CHAT_ONLY
 
 } // namespace jinja2

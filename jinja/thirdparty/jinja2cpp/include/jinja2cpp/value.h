@@ -10,6 +10,7 @@
 #include <nonstd/string_view.hpp>
 
 #include <atomic>
+#include <cstdint>
 #include <vector>
 #include <unordered_map>
 #include <string>
@@ -714,7 +715,7 @@ struct JINJA2CPP_EXPORT UserCallable
     std::vector<ArgInfo> argsInfo;
 
 private:
-    static std::atomic_uint64_t m_gen;
+    static std::atomic<uint64_t> m_gen;
     uint64_t m_counter{};
 };
 

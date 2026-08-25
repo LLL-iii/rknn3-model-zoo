@@ -8,20 +8,21 @@
 #   bash build.sh [-s <system>] [-a <arch>] [-b <build_type>] [-n <sdk>]
 #     默认构建 linux_x86（bash build.sh 即等价于 -s linux -a x86 -b Release）
 #     -s system : linux / android / cygwin
-#     -a arch   : linux: aarch64/x86 ; android: arm64-v8a/armeabi-v7a ; cygwin: x86
+#     -a arch   : linux: aarch64/armhf/x86 ; android: arm64-v8a/armeabi-v7a ; cygwin: x86
 #     -b type   : Debug / Release / RelWithDebInfo
 #     -n sdk    : 默认 chat_template
 #
 # 示例：
 #   Linux x86 服务器（默认）:      bash build.sh
-#   Linux 板端（RK3588）:         bash build.sh -s linux -a aarch64
+#   Linux 板端（RK3588，aarch64）:  bash build.sh -s linux -a aarch64
+#   Linux 板端（armv7，armhf）:    bash build.sh -s linux -a armhf
 #   Android 板端（RK3576）:      bash build.sh -s android -a arm64-v8a
 #   Windows 本机（Cygwin）:      bash build.sh -s cygwin -a x86
 #
 # Boost 说明：Jinja2Cpp 依赖 boost（filesystem/regex/system 编译库）。
 #   - cygwin：使用 Cygwin 系统 Boost（无需 BOOST_ROOT）
-#   - linux/android：需要 aarch64/Android 交叉编译的 Boost，通过 BOOST_ROOT 指定
-#     （若无 BOOST_ROOT 指定, build.sh 默认从 thirdparty/boost 编译，产物在 build/boost_<platform>）。
+#   - linux/android：需要 aarch64/armhf/Android 交叉编译的 Boost，通过 BOOST_ROOT 指定
+#     （可用 cross_build_aarch64.sh / cross_build_android.sh 中的 b2 段预编译）
 set -e
 
 TARGET_SDK=chat_template
@@ -39,7 +40,7 @@ while getopts "s:a:b:n:" opt; do
     ?)
       echo "Usage: $0 -s <system> -a <arch> -b <build_type> -n <sdk>"
       echo "  system: linux / android / cygwin"
-      echo "  arch  : linux: aarch64/x86 ; android: arm64-v8a/armeabi-v7a ; cygwin: x86"
+      echo "  arch  : linux: aarch64/armhf/x86 ; android: arm64-v8a/armeabi-v7a ; cygwin: x86"
       exit -1 ;;
   esac
 done
@@ -86,6 +87,7 @@ build_boost_thirdparty() {
   echo "==> [Boost] 从 thirdparty/boost 编译 -> $BOOST_PREFIX"
   mkdir -p "$ROOT_PWD/build"
   cd "$BOOST_TP"
+  # 修复在 Windows 解压/跨平台传输导致的脚本权限丢失（bootstrap / b2 引擎需执行位）
   chmod +x bootstrap.sh 2>/dev/null || true
   chmod +x tools/build/src/engine/build.sh 2>/dev/null || true
   find tools -name "*.sh" -exec chmod +x {} \; 2>/dev/null || true
@@ -93,6 +95,8 @@ build_boost_thirdparty() {
     ./bootstrap.sh --prefix="$BOOST_PREFIX" >"$ROOT_PWD/build/boost_bootstrap.log" 2>&1 \
       || { echo "ERROR: boost bootstrap 失败，见 build/boost_bootstrap.log"; return 1; }
   fi
+  # variant=release 必须显式指定：Boost.Build 默认 variant 是 debug（带 -g），
+  # 会生成巨量调试信息（Android 上曾达 ~96MB 静态库）。-Os 控体积。
   local b2_args=(toolset=gcc cxxflags="-Os -std=c++11")
   local b2_extra=()
   if [ "${TARGET_SYSTEM}" == "linux" ] && [ "${TARGET_ARCH}" == "aarch64" ]; then
@@ -103,6 +107,15 @@ using gcc : arm : ${CXX_COMPILER_AARCH64} ;
 EOF
     b2_extra=(--user-config="$ROOT_PWD/build/user-config-aarch64.jam")
     b2_args=(toolset=gcc-arm cxxflags="-Os -std=c++11" architecture=arm address-model=64 \
+             binary-format=elf abi=aapcs target-os=linux)
+  elif [ "${TARGET_SYSTEM}" == "linux" ] && [ "${TARGET_ARCH}" == "armhf" ]; then
+    # armhf 交叉编译（ARM 32 位硬浮点）：注册交叉编译器（user-config.jam），architecture=arm + address-model=32
+    mkdir -p "$ROOT_PWD/build"
+    cat > "$ROOT_PWD/build/user-config-armhf.jam" <<EOF
+using gcc : armhf : ${CXX_COMPILER_ARMHF} ;
+EOF
+    b2_extra=(--user-config="$ROOT_PWD/build/user-config-armhf.jam")
+    b2_args=(toolset=gcc-armhf cxxflags="-Os -std=c++11" architecture=arm address-model=32 \
              binary-format=elf abi=aapcs target-os=linux)
   elif [ "${TARGET_SYSTEM}" == "android" ]; then
     # Android 交叉编译：NDK clang（toolset=clang-android），architecture=arm + address-model
@@ -180,6 +193,12 @@ if [ "${TARGET_SYSTEM}" == "linux" ]; then
       -DCMAKE_C_COMPILER=${C_COMPILER_AARCH64} \
       -DCMAKE_CXX_COMPILER=${CXX_COMPILER_AARCH64} \
       "${COMMON_FLAGS[@]}"
+  elif [ "${TARGET_ARCH}" == "armhf" ]; then
+    cmake ../.. \
+      -DCMAKE_SYSTEM_NAME=Linux \
+      -DCMAKE_C_COMPILER=${C_COMPILER_ARMHF} \
+      -DCMAKE_CXX_COMPILER=${CXX_COMPILER_ARMHF} \
+      "${COMMON_FLAGS[@]}"
   else  # x86
     cmake ../.. \
       -DCMAKE_SYSTEM_NAME=Linux \
@@ -206,7 +225,7 @@ fi
 # ── 构建 ───────────────────────────────────────────────────────────────────
 make -j"$(nproc 2>/dev/null || echo 4)" render_driver
 
-# ── install 整合（可推送板端的完整包）────
+# ── install 整合（可推送板端的完整包，demo/include/lib）────
 echo ""
 echo "==> 整合 install 推送包 -> ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}/demo" "${INSTALL_DIR}/include" "${INSTALL_DIR}/lib"

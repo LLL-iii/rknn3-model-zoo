@@ -8,3 +8,8 @@ export CXX_COMPILER_AARCH64=${RK_AARCH64_TOOLCHAIN}/aarch64-linux-gnu-g++
 # x86_64（服务器本机 / Linux x86 测试）
 export C_COMPILER_X86_64=/usr/bin/gcc
 export CXX_COMPILER_X86_64=/usr/bin/g++
+
+# armhf（ARM 32 位硬浮点，armv7 板端）
+ARMHF_TOOLCHAIN=/opt/toolchains/gcc-linaro-6.3.1-2017.05-x86_64_arm-linux-gnueabihf/bin/
+export C_COMPILER_ARMHF=${ARMHF_TOOLCHAIN}/arm-linux-gnueabihf-gcc
+export CXX_COMPILER_ARMHF=${ARMHF_TOOLCHAIN}/arm-linux-gnueabihf-g++

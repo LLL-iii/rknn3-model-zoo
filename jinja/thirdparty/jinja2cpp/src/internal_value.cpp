@@ -39,7 +39,7 @@ bool ListAdapter::Iterator::equal(const Iterator& other) const
     return (*this->m_iterator)->GetCurrent() == (*other.m_iterator)->GetCurrent() && this->m_currentIndex == other.m_currentIndex;
 }
 
-std::atomic_uint64_t UserCallable::m_gen{};
+std::atomic<uint64_t> UserCallable::m_gen{};
 
 bool Value::IsEqual(const Value& rhs) const
 {
@@ -452,6 +452,11 @@ struct StringGetter : public visitors::BaseVisitor<std::string>
     std::string operator()(const nonstd::string_view& str) const { return std::string(str.begin(), str.end()); }
     std::string operator()(const std::wstring& str) const { return ConvertString<std::string>(str); }
     std::string operator()(const nonstd::wstring_view& str) const { return ConvertString<std::string>(str); }
+    // RKNN3: 对齐 Python —— 空 list 直接输出为 "[]"（如 content=[]）；非空 list 保持原行为
+    std::string operator()(const ListAdapter& list) const
+    {
+        return list.GetSize().value_or(0) == 0 ? std::string("[]") : std::string();
+    }
 };
 
 std::string AsString(const InternalValue& val)

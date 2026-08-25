@@ -7,7 +7,6 @@
 #include "template.h"
 
 #include <mutex>
-#include <shared_mutex>
 #include <type_traits>
 #include <unordered_map>
 
@@ -235,8 +234,10 @@ public:
             return false;
         if (m_templateCache != other.m_templateCache)
             return false;
+#ifndef JINJA2CPP_CHAT_ONLY
         if (m_templateWCache != other.m_templateWCache)
             return false;
+#endif
 
         return true;
     }

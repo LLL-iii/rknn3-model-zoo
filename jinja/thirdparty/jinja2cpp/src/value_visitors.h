@@ -221,7 +221,15 @@ struct ValueRendererBase
     void operator()(const GenericMap&) const {}
     void operator()(const GenericList&) const {}
     void operator()(const MapAdapter&) const {}
-    void operator()(const ListAdapter&) const {}
+    void operator()(const ListAdapter& val) const
+    {
+        // RKNN3: 对齐 Python —— 空 list 直接输出为 "[]"（如 content=[]）；非空 list 保持原行为
+        if (val.GetSize().value_or(0) == 0)
+        {
+            m_os->push_back(CharT('['));
+            m_os->push_back(CharT(']'));
+        }
+    }
     void operator()(const ValueRef&) const {}
     void operator()(const TargetString&) const {}
     void operator()(const TargetStringView&) const {}

@@ -2,10 +2,9 @@
 """board_test_chat.py — 板端 chat_template 实时加载渲染测试
 
 原理（模拟真实使用）：
-  板端有模型目录（如 models/rknn3_zoo_test_*/）里的配置文件
+  板端只有模型目录里的配置文件
   （chat_template.jinja / tokenizer_config.json）。测试即验证：板端从模型目录
   **实时加载模板并渲染** —— render_driver --model-dir <模型目录> --ctx <对话>。
-  若没有模板配置文件，板端无法渲染；可推送data/models/下的模板配置文件到板端，模拟真实部署。
 
   因此：
     - 推送到板端的是「模型目录的模板配置文件 + 测试对话 ctx」，
@@ -115,8 +114,9 @@ class LocalRunner:
                                capture_output=True, timeout=180)
         else:
             driver = self.driver
-            if self.is_windows and driver.lower().endswith(".exe") and os.path.exists(driver + ".exe"):
-                driver += ".exe"
+            # Windows 下 install 产物可能只有 render_driver.exe（无扩展名），CreateProcess 不自动补 .exe
+            if self.is_windows and not driver.lower().endswith(".exe") and os.path.exists(driver + ".exe"):
+                driver = driver + ".exe"
             r = subprocess.run([driver, "--model-dir", model_dir_abs, "--ctx", ctx_abs,
                                 "--bench", str(bench), "--mem"],
                                capture_output=True, timeout=180)
@@ -141,7 +141,7 @@ def main():
         subs = [s.strip() for s in args.only.split(",") if s.strip()]
         models = [m for m in models if any(s in m["name"] for s in subs)]
 
-    host_models_dir = _host_models_dir(args.data)  # 本机 tokenizer/models
+    host_models_dir = _host_models_dir(args.data)
     install_dir = args.install
     driver_path = os.path.join(install_dir, "demo", "render_driver")
 
@@ -182,7 +182,7 @@ def main():
             if rc != 0:
                 print(f"WARN: push {m['name']} 模板配置失败: {msg[:150]}")
             n_tpl += 1
-        rc, msg = runner.push(os.path.join(args.data, "ctx"), f"{args.board_dir}/")
+        rc, msg = runner.push(os.path.join(args.data, "ctx"), f"{args.board_dir}")
         if rc != 0:
             print(f"WARN: push ctx 失败: {msg[:150]}")
         ctx_n, _, _ = runner.shell(f"ls {args.board_dir}/ctx | wc -l")

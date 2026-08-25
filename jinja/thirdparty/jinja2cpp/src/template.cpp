@@ -13,10 +13,12 @@ bool operator==(const Template& lhs, const Template& rhs)
     return lhs.IsEqual(rhs);
 }
 
+#ifndef JINJA2CPP_CHAT_ONLY
 bool operator==(const TemplateW& lhs, const TemplateW& rhs)
 {
     return lhs.IsEqual(rhs);
 }
+#endif // JINJA2CPP_CHAT_ONLY
 
 template<typename CharT>
 auto GetImpl(std::shared_ptr<ITemplateImpl> impl) -> TemplateImpl<CharT>*
@@ -105,6 +107,7 @@ bool Template::IsEqual(const Template& other) const
     return m_impl == other.m_impl;
 }
 
+#ifndef JINJA2CPP_CHAT_ONLY
 TemplateW::TemplateW(TemplateEnv* env)
     : m_impl(new TemplateImpl<wchar_t>(env))
 {
@@ -186,5 +189,7 @@ bool TemplateW::IsEqual(const TemplateW& other) const
 {
     return m_impl == other.m_impl;
 }
+
+#endif // JINJA2CPP_CHAT_ONLY
 
 } // namespace jinja2

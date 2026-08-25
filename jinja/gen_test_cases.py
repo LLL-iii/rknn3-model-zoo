@@ -348,6 +348,93 @@ _reg("injection", None, "用户输入含模板语法（{{ {% 等）", lambda bos
      "add_generation_prompt": True},
 ])
 
+# 12. 空/缺失 content：消息 content 为  "" / []（多模态）的边界
+_reg("empty_content", None, "消息 content 为 null/空串/空 list", lambda bos, eos, mm: [
+    # v1: content 为空字符串
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("system", SYSTEM_TXT, mm), _msg("user", "", mm)],
+     "add_generation_prompt": True},
+    # v2: content 字段缺失（模板不兼容的变体 golden 失败自动 SKIP）
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("system", SYSTEM_TXT, mm), {"role": "user"}],
+     "add_generation_prompt": True},
+    # v3: 多模态 content 为空 list（仅 mm 模型适用，其余模板 golden 失败自动 SKIP）
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("system", SYSTEM_TXT, mm), {"role": "user", "content": []}],
+     "add_generation_prompt": True},
+])
+
+# 13. 工具定义为空数组：tools=[] 时模板是否仍正常渲染
+_reg("empty_tools", _need_tools, "tools=[] 空工具定义", lambda bos, eos, mm: [
+    {"bos_token": bos, "eos_token": eos, "tools": [],
+     "messages": [_msg("system", SYSTEM_TXT, mm), _msg("user", "Hello, how are you?", mm)],
+     "add_generation_prompt": True},
+    {"bos_token": bos, "eos_token": eos, "tools": [],
+     "messages": [_msg("user", "No tools needed.", mm),
+                  _msg("assistant", "Sure.", mm)],
+     "add_generation_prompt": False},
+])
+
+# 14. 有工具定义但未调用 + generation prompt 组合（部分模板会额外插入工具提示）
+_reg("tools_no_call", _need_tools, "有工具但未调用（tools + add_generation_prompt）", lambda bos, eos, mm: [
+    {"bos_token": bos, "eos_token": eos, "tools": TOOLS,
+     "messages": [_msg("system", SYSTEM_TXT, mm),
+                  _msg("user", "Just chat, no tools.", mm),
+                  _msg("assistant", "Happy to chat!", mm)],
+     "add_generation_prompt": True},
+    {"bos_token": bos, "eos_token": eos, "tools": TOOLS,
+     "messages": [_msg("user", "What's up?", mm)],
+     "add_generation_prompt": False},
+])
+
+# 15. 多模态 image 占位符带 URL / base64（仅视觉模型）
+_reg("multimodal_image_url", _need_mm, "多模态 image 带 URL/base64", lambda bos, eos, mm: [
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("system", "You are a vision assistant.", True),
+                  _msg("user", [{"type": "text", "text": "What's in this image?"},
+                                {"type": "image", "image_url": "https://example.com/img.png"}], True)],
+     "add_generation_prompt": True},
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("user", [{"type": "text", "text": "Describe:"},
+                                {"type": "image", "data": "iVBORw0KGgoAAAANSUhEUg=="}], True)],
+     "add_generation_prompt": True},
+])
+
+# 16. 模板 for/if 复杂逻辑边界（空角色 / 仅末尾 / 推理内容）
+_reg("advanced_logic", None, "模板 for/if 分支边界（仅末尾/空角色/推理）", lambda bos, eos, mm: [
+    # v1: 仅 user + generation prompt（触发 loop.last 与末尾生成分支）
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("user", "Hello.", mm)],
+     "add_generation_prompt": True},
+    # v2: 仅 assistant（无 generation prompt，非 last 分支）
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("assistant", "Just an assistant turn.", mm)],
+     "add_generation_prompt": False},
+    # v3: assistant 含 reasoning_content（触发 if 推理分支）
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("user", "Explain step by step.", mm),
+                  _msg("assistant", "Final answer.", mm, reasoning_content="thinking...")],
+     "add_generation_prompt": True},
+])
+
+# 17. 重复/多条 system
+_reg("multi_system", _need_system, "重复/多条 system", lambda bos, eos, mm: [
+    # v1: 两条 system（开头 + 中间）
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("system", "System A.", mm),
+                  _msg("user", "Hi.", mm),
+                  _msg("system", "System B.", mm),
+                  _msg("user", "Continue.", mm)],
+     "add_generation_prompt": True},
+    # v2: 三条连续 system 开头
+    {"bos_token": bos, "eos_token": eos,
+     "messages": [_msg("system", "S1.", mm),
+                  _msg("system", "S2.", mm),
+                  _msg("system", "S3.", mm),
+                  _msg("user", "Hello.", mm)],
+     "add_generation_prompt": True},
+])
+
 
 def render_golden(src, ctx):
     env = Environment(
@@ -363,7 +450,7 @@ def render_golden(src, ctx):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--models-dir", default=os.path.join(os.path.dirname(__file__),"data", "models"))
+    ap.add_argument("--models-dir", default=r"E:\rknn3-model-zoo\rknn3-model-zoo2\tokenizer\models")
     ap.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "data"))
     ap.add_argument("--scenarios", default=",".join(SCENARIOS.keys()))
     ap.add_argument("--list-scenarios", action="store_true", help="仅列出场景及变体数")

@@ -7,6 +7,7 @@
 
 namespace
 {
+#ifndef NDEBUG
 template<typename FmtCtx>
 struct ValueRenderer
 {
@@ -88,8 +89,10 @@ struct ValueRenderer
         fmt::format_to(ctx->out(), UNIVERSAL_STR("{}").GetValue<CharT>(), val);
     }
 };
+#endif
 } // namespace
 
+#ifndef NDEBUG
 namespace fmt
 {
 template<typename CharT>
@@ -110,6 +113,7 @@ struct formatter<jinja2::Value, CharT>
     }
 };
 } // namespace fmt
+#endif
 
 namespace jinja2
 {
@@ -118,12 +122,16 @@ template<typename CharT>
 void RenderErrorInfo(std::basic_string<CharT>& result, const ErrorInfoTpl<CharT>& errInfo)
 {
     using string_t = std::basic_string<CharT>;
+    ErrorCode errCode = errInfo.GetCode();
+#if defined(NDEBUG)
+    // Release：只输出错误码，不生成详细源码定位/消息（省体积；板端错误仅需错误码定位）
+    fmt::format_to(std::back_inserter(result), UNIVERSAL_STR("error: {}").GetValue<CharT>(), static_cast<int>(errCode));
+#else
     auto out = fmt::basic_memory_buffer<CharT>();
 
     auto& loc = errInfo.GetErrorLocation();
 
     fmt::format_to(std::back_inserter(out), UNIVERSAL_STR("{}:{}:{}: error: ").GetValue<CharT>(), ConvertString<string_t>(loc.fileName), loc.line, loc.col);
-    ErrorCode errCode = errInfo.GetCode();
     switch (errCode)
     {
     case ErrorCode::Unspecified:
@@ -259,6 +267,7 @@ void RenderErrorInfo(std::basic_string<CharT>& result, const ErrorInfoTpl<CharT>
     }
     format_to(std::back_inserter(out), UNIVERSAL_STR("\n{}").GetValue<CharT>(), errInfo.GetLocationDescr());
     result = {out.data(), out.size()};
+#endif
 }
 
 template<>
