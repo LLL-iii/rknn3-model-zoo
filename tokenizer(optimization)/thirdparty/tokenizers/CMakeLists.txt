@@ -125,6 +125,9 @@ endif()
 
 if(SUPPORT_REGEX_LOOKAHEAD)
   set(PCRE2_STATIC_PIC ON)
+  # JIT 大幅加速 pcre2_match（长文本 Split 切分时每次 match 50-100us 是瓶颈）。
+  # 平台不支持 JIT 时 pcre2_jit_compile 会失败并自动回退非 JIT 匹配。
+  set(PCRE2_SUPPORT_JIT ON)
   set(PCRE2_BUILD_PCRE2_8 ON)
   set(PCRE2_BUILD_PCRE2_16 OFF)
   set(PCRE2_BUILD_PCRE2_32 OFF)

@@ -77,6 +77,15 @@ Error Pcre2Regex::compile(const std::string& pattern) {
     }
   }
 
+  // JIT-compile for fast repeated matching (find_all on long Split inputs makes
+  // one pcre2_match call per piece; JIT cuts each call from ~50-100us to a few
+  // us).  If the platform can't JIT (no executable memory etc.), this returns a
+  // nonzero code and matching falls back to the interpreter.
+  int jit_rc = pcre2_jit_compile(regex_, PCRE2_JIT_COMPLETE);
+  if (jit_rc != 0) {
+    TK_LOG(Debug, "PCRE2 JIT unavailable (rc=%d), using interpreter", jit_rc);
+  }
+
   return Error::Ok;
 }
 
@@ -110,8 +119,10 @@ std::vector<Match> Pcre2Regex::find_all(const std::string& text) const {
   PCRE2_SIZE subject_length = text.length();
   PCRE2_SIZE offset = 0;
 
+  // Try JIT first (compiled in compile()); falls back to the interpreter if
+  // the JIT function returns PCRE2_ERROR_JIT_BADOPTION / not available.
   while (offset < subject_length) {
-    int rc = pcre2_match(
+    int rc = pcre2_jit_match(
         regex_,
         subject,
         subject_length,
@@ -119,6 +130,16 @@ std::vector<Match> Pcre2Regex::find_all(const std::string& text) const {
         0, // Default options
         match_data,
         nullptr);
+    if (rc == PCRE2_ERROR_JIT_BADOPTION) {
+      rc = pcre2_match(
+          regex_,
+          subject,
+          subject_length,
+          offset,
+          0, // Default options
+          match_data,
+          nullptr);
+    }
 
     if (rc < 0) {
       if (rc == PCRE2_ERROR_NOMATCH) {

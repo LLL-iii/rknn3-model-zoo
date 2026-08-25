@@ -148,13 +148,23 @@ inline bool operator>=(string_view a, string_view b) noexcept {
 template <>
 struct hash<string_view> {
   size_t operator()(string_view s) const noexcept {
-    // FNV-1a
-    size_t h = 1469598103934665603ULL;
-    for (string_view::const_iterator it = s.begin(); it != s.end(); ++it) {
-      h ^= static_cast<unsigned char>(*it);
-      h *= 1099511628211ULL;
+    // FNV-1a.  Use 64-bit constants on 64-bit size_t, 32-bit on 32-bit
+    // platforms (armhf) to avoid truncation warnings / sign issues.
+    if (sizeof(size_t) >= 8) {
+      size_t h = 1469598103934665603ULL;
+      for (string_view::const_iterator it = s.begin(); it != s.end(); ++it) {
+        h ^= static_cast<unsigned char>(*it);
+        h *= 1099511628211ULL;
+      }
+      return h;
+    } else {
+      size_t h = 2166136261U;
+      for (string_view::const_iterator it = s.begin(); it != s.end(); ++it) {
+        h ^= static_cast<unsigned char>(*it);
+        h *= 16777619U;
+      }
+      return h;
     }
-    return h;
   }
 };
 
