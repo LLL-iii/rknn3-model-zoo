@@ -77,14 +77,17 @@ Error Pcre2Regex::compile(const std::string& pattern) {
     }
   }
 
+#if !defined(__CYGWIN__)
   // JIT-compile for fast repeated matching (find_all on long Split inputs makes
   // one pcre2_match call per piece; JIT cuts each call from ~50-100us to a few
-  // us).  If the platform can't JIT (no executable memory etc.), this returns a
+  // us).  Cygwin's sljit JIT segfaults at runtime, so it is not compiled there.
+  // If the platform can't JIT (no executable memory etc.), this returns a
   // nonzero code and matching falls back to the interpreter.
   int jit_rc = pcre2_jit_compile(regex_, PCRE2_JIT_COMPLETE);
   if (jit_rc != 0) {
     TK_LOG(Debug, "PCRE2 JIT unavailable (rc=%d), using interpreter", jit_rc);
   }
+#endif
 
   return Error::Ok;
 }
@@ -121,8 +124,21 @@ std::vector<Match> Pcre2Regex::find_all(const std::string& text) const {
 
   // Try JIT first (compiled in compile()); falls back to the interpreter if
   // the JIT function returns PCRE2_ERROR_JIT_BADOPTION / not available.
+  // Cygwin's sljit produces JIT code that segfaults at runtime, so it always
+  // uses the interpreter.  Linux / Android get the JIT speedup.
   while (offset < subject_length) {
-    int rc = pcre2_jit_match(
+    int rc;
+#if defined(__CYGWIN__)
+    rc = pcre2_match(
+        regex_,
+        subject,
+        subject_length,
+        offset,
+        0, // Default options
+        match_data,
+        nullptr);
+#else
+    rc = pcre2_jit_match(
         regex_,
         subject,
         subject_length,
@@ -140,6 +156,7 @@ std::vector<Match> Pcre2Regex::find_all(const std::string& text) const {
           match_data,
           nullptr);
     }
+#endif
 
     if (rc < 0) {
       if (rc == PCRE2_ERROR_NOMATCH) {
