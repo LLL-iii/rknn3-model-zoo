@@ -52,8 +52,30 @@ Tokenizer::Tokenizer(const char* model_dir)
 
     std::string dir(model_dir);
 
-    std::string spModel = dir + "/tokenizer.model";
-    if (file_exists(spModel)) {
+    // Prefer tokenizer.json (BPE via HFTokenizer): it matches HuggingFace's
+    // byte-level semantics exactly and its heap-based merge_all is much faster
+    // than the SentencePiece backend on a single 100k-char word (e.g. FastVLM
+    // ships both; the .json is byte-identical to the .model). tokenizer.model
+    // is only used as a fallback when no tokenizer.json exists.
+    std::string jsonPath = dir + "/tokenizer.json";
+    std::string spModel  = dir + "/tokenizer.model";
+    bool have_json = file_exists(jsonPath);
+    bool have_spm  = file_exists(spModel);
+
+    if (have_json) {
+        auto err = impl_->hfTok.load(dir);
+        if (err == tokenizers::Error::Ok) {
+            int vs = impl_->hfTok.vocab_size();
+            if (vs > 0 && vs <= 500000) {
+                impl_->loaded    = true;
+                impl_->vocabInfo = makeBPEInfo(impl_->hfTok);
+                return;
+            }
+        }
+        // tokenizer.json present but unusable: fall through to SPM if available.
+    }
+
+    if (have_spm) {
         auto err = impl_->spTok.load(spModel);
         if (err == tokenizers::Error::Ok) {
             impl_->useSPM    = true;
@@ -63,6 +85,8 @@ Tokenizer::Tokenizer(const char* model_dir)
         }
     }
 
+    // No usable tokenizer.json (already tried above) and no tokenizer.model:
+    // report the failure from the HFTokenizer load.
     auto err = impl_->hfTok.load(dir);
     if (err != tokenizers::Error::Ok) {
         fprintf(stderr, "[Tokenizer] load failed: %s (error=%d)\n",

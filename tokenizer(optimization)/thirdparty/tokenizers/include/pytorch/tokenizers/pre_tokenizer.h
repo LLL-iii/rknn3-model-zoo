@@ -262,6 +262,13 @@ class ByteLevelPreTokenizer : public PreTokenizer {
   const std::string pattern_;
   const bool add_prefix_space_;
   const bool use_regex_;
+  // Cached compiled regex.  ByteLevel is often inside a Sequence pretokenizer
+  // where pre_tokenize() is called once per upstream piece (e.g. Digits splits
+  // 100k text into ~29K pieces, each hitting ByteLevel).  Compiling the regex
+  // on every call was ~30k pcre2_compile calls (~1.5s for 100k text); compile
+  // once and reuse.
+  mutable std::unique_ptr<IRegex> regex_cache_;
+  mutable bool regex_cached_ = false;
 
 }; // end class ByteLevelPreTokenizer
 

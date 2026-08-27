@@ -98,6 +98,12 @@ class NormalizerConfig {
   NORMALIZER_CONFIG_MEMBER(std::string, content)
 
   /**
+   * Used by: ReplaceNormalizer — the un-escaped literal pattern (only set when
+   * the pattern came from a "String", enabling a linear fast-path replace).
+   */
+  std::string literal_pattern;
+
+  /**
    * Used by: SequenceNormalizer
    */
   NORMALIZER_CONFIG_MEMBER(std::vector<NormalizerConfig>, normalizers)
@@ -138,11 +144,18 @@ class ReplaceNormalizer : public Normalizer {
   /**
    * @param pattern: The pattern to search for (can be a string or regex)
    * @param content: The replacement content
+   * @param literal: Optional literal pattern (un-escaped) for a plain-string
+   *    replacement.  When set, normalize() does a linear in-place scan instead
+   *    of a regex find_all (regex matching over a long input has per-match
+   *    overhead; e.g. MiniCPM's Replace(" " -> "▁") over 100k text).
    */
   explicit ReplaceNormalizer(
       const std::string& pattern,
-      const std::string& content)
-      : regex_(ReplaceNormalizer::create_regex_(pattern)), content_(content) {}
+      const std::string& content,
+      const std::string& literal = "")
+      : regex_(ReplaceNormalizer::create_regex_(pattern)),
+        content_(content),
+        literal_pattern_(literal) {}
 
   /** Normalize with the stored pattern replacement */
   std::string normalize(const std::string& input) const override;
@@ -152,6 +165,7 @@ class ReplaceNormalizer : public Normalizer {
 
   std::unique_ptr<IRegex> regex_;
   const std::string content_;
+  const std::string literal_pattern_;
 
 }; // end class ReplaceNormalizer
 

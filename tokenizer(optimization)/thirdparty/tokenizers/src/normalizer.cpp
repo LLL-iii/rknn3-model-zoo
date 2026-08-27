@@ -47,7 +47,8 @@ Normalizer::Ptr NormalizerConfig::create() const {
       throw std::runtime_error(
           "Missing content for Normalizer of type Replace");
     }
-    return Normalizer::Ptr(new ReplaceNormalizer(*pattern, *content));
+    return Normalizer::Ptr(
+        new ReplaceNormalizer(*pattern, *content, literal_pattern));
   }
   if (type == "Prepend") {
     if (!prepend) {
@@ -77,6 +78,7 @@ Normalizer::Ptr NormalizerConfig::create() const {
 NormalizerConfig& NormalizerConfig::parse_json(const json& json_config) {
   type = json_config.at("type");
   if (type == "Replace") {
+    literal_pattern = "";
     try {
       pattern = json_config.at("pattern").at("Regex");
     } catch (json::out_of_range&) {
@@ -85,6 +87,7 @@ NormalizerConfig& NormalizerConfig::parse_json(const json& json_config) {
       // For string patterns, escape regex special characters to treat them as
       // literal strings (same as Rust's regex::escape)
       pattern = IRegex::escape(literal);
+      literal_pattern = literal;
     }
 
     content = json_config.at("content");
@@ -121,6 +124,33 @@ std::unique_ptr<IRegex> ReplaceNormalizer::create_regex_(
 }
 
 std::string ReplaceNormalizer::normalize(const std::string& input) const {
+  // Fast path: plain-string literal replacement (from a "String" pattern).
+  // Linear scan, no regex find_all (which has per-match overhead over long
+  // inputs, e.g. MiniCPM's Replace(" " -> "▁") on 100k text).
+  if (!literal_pattern_.empty()) {
+    if (literal_pattern_.size() == 1) {
+      const char p = literal_pattern_[0];
+      std::string out;
+      out.reserve(input.size());
+      for (char c : input) {
+        if (c == p) out += content_;
+        else out += c;
+      }
+      return out;
+    }
+    // Multi-char literal: find + append (still no regex).
+    std::string out;
+    out.reserve(input.size());
+    size_t prev = 0, pos = 0;
+    while ((pos = input.find(literal_pattern_, prev)) != std::string::npos) {
+      out.append(input, prev, pos - prev);
+      out += content_;
+      prev = pos + literal_pattern_.size();
+    }
+    out.append(input, prev, input.size() - prev);
+    return out;
+  }
+
   if (!regex_) {
     return input;
   }

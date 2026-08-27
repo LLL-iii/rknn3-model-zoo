@@ -138,14 +138,6 @@ static std::string_view decode_json_string_into(std::string& arena,
   return std::string_view(arena.data() + start, arena.size() - start);
 }
 
-// Decode into a fresh std::string (used by the small merge/config sections).
-static std::string decode_json_string(const char* p, const char* end,
-                                      const char** out) {
-  std::string s;
-  decode_json_string_into(s, p, end, out);
-  return s;
-}
-
 static bool decode_uint(const char* p, const char* end, uint64_t* out,
                         const char** out_end) {
   uint64_t v = 0; bool any = false;
@@ -224,7 +216,7 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
 
   std::vector<int64_t> prev(n), next(n);
   std::vector<uint32_t> version(n, 0);
-  std::vector<bool> alive(n, true);
+  std::vector<uint8_t> alive(n, 1);
   for (size_t i = 0; i < n; ++i) {
     prev[i] = static_cast<int64_t>(i) - 1;
     next[i] = (i + 1 < n) ? static_cast<int64_t>(i + 1) : -1;
@@ -236,9 +228,13 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
   // pair's rank and comparing to `c.rank`. That check relies on merge ranks
   // being unique (they are merge indices), so a changed pair cannot
   // coincidentally carry the same rank.
+  //
+  // Candidate is kept at 12 bytes (uint32 rank/pos/version; merge indices and
+  // symbol positions are both < 2^31 for every supported vocabulary/input) so
+  // heap sift operations copy a third of the bytes of the old 24-byte struct.
   struct Candidate {
-    uint64_t rank;
-    int64_t pos;
+    uint32_t rank;
+    int32_t pos;
     uint32_t version;
   };
   struct Compare {
@@ -249,7 +245,20 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
       return a.pos > b.pos;
     }
   };
-  std::priority_queue<Candidate, std::vector<Candidate>, Compare> heap;
+
+  // Prefer std::make_heap over n individual push_heap calls: initial
+  // construction is O(n) instead of O(n log n), which matters when a whole
+  // 100k-char input arrives as a single word (null pre_tokenizer).
+  std::vector<Candidate> heap;
+  heap.reserve(n);
+  for (size_t i = 0; i + 1 < n; ++i) {
+    const auto* e =
+        detail::merge_lookup(merge_map, tokens[i], tokens[i + 1]);
+    if (e) {
+      heap.push_back({e->rank, static_cast<int32_t>(i), 0});
+    }
+  }
+  std::make_heap(heap.begin(), heap.end(), Compare());
 
   auto push_pair = [&](int64_t i) {
     if (i < 0 || next[i] < 0) {
@@ -258,17 +267,15 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
     const auto* e =
         detail::merge_lookup(merge_map, tokens[i], tokens[next[i]]);
     if (e) {
-      heap.push({e->rank, i, version[i]});
+      heap.push_back({e->rank, static_cast<int32_t>(i), version[i]});
+      std::push_heap(heap.begin(), heap.end(), Compare());
     }
   };
 
-  for (size_t i = 0; i + 1 < n; ++i) {
-    push_pair(static_cast<int64_t>(i));
-  }
-
   while (!heap.empty()) {
-    const Candidate c = heap.top();
-    heap.pop();
+    std::pop_heap(heap.begin(), heap.end(), Compare());
+    const Candidate c = heap.back();
+    heap.pop_back();
     const int64_t i = c.pos;
     if (!alive[i] || version[i] != c.version || next[i] < 0) {
       continue; // stale entry
@@ -282,7 +289,7 @@ void HFWord::merge_all(const detail::MergeMap& merge_map) {
     // Merge j into i.
     tokens[i] = e->mid;
     byte_lengths[i] += byte_lengths[j];
-    alive[j] = false;
+    alive[j] = 0;
     const int64_t jn = next[j];
     next[i] = jn;
     if (jn >= 0) {
@@ -458,14 +465,19 @@ Error HFTokenizer::load(const std::string& path) {
       const char* p = rg.first + 1;          // past '['
       const char* e = rg.second - 1;         // before ']'
       uint32_t mi = 0;
+      // Buffers are declared outside the loop and reused per entry so the
+      // 514K-merge models (gemma4) do not allocate ~3 std::strings (f, sec,
+      // merged) per entry; f/sec are views into the reused decode buffers.
+      std::string s_buf, f_buf, sec_buf, merged_buf;
       while (p < e) {
         p = skip_ws(p, e);
         if (p >= e) break;
-        std::string f, sec;
+        std::string_view f, sec;
         if (*p == '"') {
           // String format: "a b"  (gemma4)
-          std::string s = decode_json_string(p, e, &p);
-          if (!s.empty() && s.rfind("#version", 0) != 0) {
+          s_buf.clear();
+          auto s = decode_json_string_into(s_buf, p, e, &p);
+          if (!s.empty() && s.find("#version") != 0) {
             size_t sp = s.find(' ');
             if (sp != std::string::npos) {
               f = s.substr(0, sp);
@@ -476,10 +488,16 @@ Error HFTokenizer::load(const std::string& path) {
           // Array format: ["a", "b"]  (Qwen3)
           ++p;
           p = skip_ws(p, e);
-          if (p < e && *p == '"') f = decode_json_string(p, e, &p);
+          if (p < e && *p == '"') {
+            f_buf.clear();
+            f = decode_json_string_into(f_buf, p, e, &p);
+          }
           p = skip_ws(p, e);
           if (p < e && *p == ',') { ++p; p = skip_ws(p, e); }
-          if (p < e && *p == '"') sec = decode_json_string(p, e, &p);
+          if (p < e && *p == '"') {
+            sec_buf.clear();
+            sec = decode_json_string_into(sec_buf, p, e, &p);
+          }
           p = skip_ws(p, e);
           if (p < e && *p == ']') ++p;
         } else {
@@ -489,8 +507,10 @@ Error HFTokenizer::load(const std::string& path) {
           auto fid = token_map_->tryGetInteger(f);
           auto sid = token_map_->tryGetInteger(sec);
           if (fid && sid) {
-            std::string merged = f + sec;
-            auto mid = token_map_->tryGetInteger(merged);
+            merged_buf.clear();
+            merged_buf.append(f.data(), f.size());
+            merged_buf.append(sec.data(), sec.size());
+            auto mid = token_map_->tryGetInteger(merged_buf);
             if (mid)
               merge_map_->push_back(
                   detail::MergeEntry{static_cast<uint32_t>(*fid),

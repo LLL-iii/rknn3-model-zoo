@@ -366,10 +366,18 @@ std::vector<std::string> ByteLevelPreTokenizer::pre_tokenize(
   // A-Za-z (ASCII-only), losing all CJK / Hiragana / Maths codepoints.
   bool has_unicode_class = (pattern_.find("\\p{") != std::string::npos);
   if (has_unicode_class) {
-    auto regex_result = create_regex(pattern_);
-    if (regex_result.ok()) {
-      auto re = std::move(regex_result.get());
-      auto matches = re->find_all(formatted_input);
+    // Compile the regex once and cache it.  ByteLevel inside a Sequence is
+    // called once per upstream piece (Digits can split 100k text into ~29K
+    // pieces), so compiling on every call was ~30k pcre2_compile calls.
+    if (!regex_cached_) {
+      auto regex_result = create_regex(pattern_);
+      if (regex_result.ok()) {
+        regex_cache_ = std::move(regex_result.get());
+      }
+      regex_cached_ = true;
+    }
+    if (regex_cache_) {
+      auto matches = regex_cache_->find_all(formatted_input);
       if (!matches.empty()) {
         std::vector<std::string> results;
         results.reserve(matches.size());
