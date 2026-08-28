@@ -1,0 +1,9 @@
+{
+	"InstallScripts" : 
+	[
+		"/cygdrive/e/rknn3-model-zoo/integration/rknn3-model-zoo/examples/Qwen2_5/cpp/build/cmake_install.cmake",
+		"/cygdrive/e/rknn3-model-zoo/integration/rknn3-model-zoo/examples/Qwen2_5/cpp/build/3rdparty.out/cmake_install.cmake",
+		"/cygdrive/e/rknn3-model-zoo/integration/rknn3-model-zoo/examples/Qwen2_5/cpp/build/utils.out/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

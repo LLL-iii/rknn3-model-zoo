@@ -1,0 +1,2 @@
+/usr/bin/ar.exe qc libimagedrawing.a CMakeFiles/imagedrawing.dir/image_drawing.c.o
+/usr/bin/ranlib.exe libimagedrawing.a

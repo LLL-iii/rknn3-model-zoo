@@ -1,107 +1,80 @@
-cmake_minimum_required(VERSION 3.14) # for add_link_options and implicit target directories.
-# set(CMAKE_BUILD_TYPE Debug)
+cmake_minimum_required(VERSION 3.18)
 project("tokenizer" C CXX)
-include(CheckIncludeFileCXX)
-
-#set(CMAKE_WARN_DEPRECATED YES)
-set(CMAKE_WARN_UNUSED_CLI YES)
-
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED true)
-
 set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED true)
-add_compile_options(-D_ISOC11_SOURCE -fPIC)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# build
-option(FATAL_WARNINGS "tokenizer: enable -Werror flag" OFF)
+# ---- C++11 compat shims (string_view / optional / make_unique) ----
+# These shadow the C++17 headers only when compiling as C++11.
+set(TOKENIZER_COMPAT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/compat)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -I${TOKENIZER_COMPAT_DIR} -include ${TOKENIZER_COMPAT_DIR}/make_unique.h")
 
-# sanitizers
-option(SANITIZE_THREAD    "tokenizer: enable thread sanitizer"    OFF)
-option(SANITIZE_ADDRESS   "tokenizer: enable address sanitizer"   OFF)
-option(SANITIZE_UNDEFINED "tokenizer: enable undefined sanitizer" OFF)
+# ---- Options ----
+option(FATAL_WARNINGS   "Enable -Werror" OFF)
+option(SANITIZE_ADDRESS "Enable ASAN"    OFF)
 
-# override ggml options
-set(GGML_ALL_WARNINGS   ${FATAL_WARNINGS})
-set(GGML_FATAL_WARNINGS ${FATAL_WARNINGS})
+# ---- Size optimisation ----
+set(CMAKE_CXX_FLAGS_RELEASE
+    "${CMAKE_CXX_FLAGS_RELEASE} -Os -ffunction-sections -fdata-sections")
+set(CMAKE_C_FLAGS_RELEASE
+    "${CMAKE_C_FLAGS_RELEASE}   -Os -ffunction-sections -fdata-sections")
+# LTO causes .o files to store GIMPLE IR instead of machine code, 4-5x bloat.
+# set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
 
-if (SANITIZE_THREAD)
-    message(STATUS "Using -fsanitize=thread")
+# ---- Embedded compat ---- static-link runtime libs to avoid GLIBCXX mismatch
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static-libstdc++ -static-libgcc")
 
-    add_compile_options(-fsanitize=thread)
-    link_libraries     (-fsanitize=thread)
-endif()
+# ---- Global PIC (static-lib merges / Android need position-independent code) ----
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-if (SANITIZE_ADDRESS)
-    message(STATUS "Using -fsanitize=address")
+# ---- Options forwarded to meta-pytorch CMakeLists.txt ----
+set(TOKENIZERS_BUILD_TEST   OFF CACHE BOOL "")
+set(TOKENIZERS_BUILD_TOOLS  OFF CACHE BOOL "")
+set(TOKENIZERS_BUILD_PYTHON OFF CACHE BOOL "")
+set(SUPPORT_REGEX_LOOKAHEAD ON CACHE BOOL "")
+set(SPM_BUILD_TEST OFF CACHE BOOL "")
+set(SPM_ENABLE_SHARED OFF CACHE BOOL "")
 
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-    link_libraries     (-fsanitize=address)
-endif()
-
-if (SANITIZE_UNDEFINED)
-    message(STATUS "Using -fsanitize=undefined")
-
-    add_compile_options(-fsanitize=undefined)
-    link_libraries     (-fsanitize=undefined)
-endif()
-
-
-set(CMAKE_C_FLAGS_DEBUG            "-O0 -g3"          CACHE STRING "Flags used by the C compiler during DEBUG builds.")
-set(CMAKE_CXX_FLAGS_DEBUG          "-O0 -g3"          CACHE STRING "Flags used by the CXX compiler during DEBUG builds.")
-set(CMAKE_C_FLAGS_RELEASE          "-O2 -s"           CACHE STRING "Flags used by the C compiler during RELEASE builds." FORCE)
-set(CMAKE_CXX_FLAGS_RELEASE        "-O2 -s"           CACHE STRING "Flags used by the CXX compiler during RELEASE builds." FORCE)
-
-add_subdirectory(thirdparty/llama_vocab)
-
-include_directories(${CMAKE_SOURCE_DIR}/include
-                    ${CMAKE_SOURCE_DIR}/src
-                    ${CMAKE_SOURCE_DIR}/src/llama
-                    ${CMAKE_SOURCE_DIR}/src/utils
-                    ${CMAKE_SOURCE_DIR}/thirdparty/llama_vocab/include
-                    ${CMAKE_SOURCE_DIR}/thirdparty/llama_vocab/ggml/include
-                    ${CMAKE_SOURCE_DIR}/thirdparty/llama_vocab/common)
-
-add_library(tokenizer STATIC
-            src/Tokenizer.cpp
-            src/TokenizerBase.h
-            src/llama/LlamaTokenizer.cpp)
-
-add_dependencies(tokenizer llama_merge_static_libs)
-
-target_link_libraries(tokenizer  ${LLAMA_LIBS})
-
-
-target_compile_features(tokenizer PUBLIC cxx_std_11) # don't bump
-
-add_subdirectory(demo)
-
-# INSTALL(TARGETS tokenizer DESTINATION lib)
-INSTALL(FILES ${CMAKE_SOURCE_DIR}/include/Tokenizer.h DESTINATION include)
-
-# 静态库路径
-set(TOKENIZER_LIB ${CMAKE_CURRENT_BINARY_DIR}/libtokenizer.a)
-set(TOKENIZER_LIBS ${CMAKE_CURRENT_BINARY_DIR}/libtokenizer_merged.a)
-
-
-# 合并命令
-add_custom_command(
-    COMMAND ${CMAKE_COMMAND} -E echo "TOKENIZER_LIB: ${TOKENIZER_LIB}"
-    COMMAND ${CMAKE_COMMAND} -E echo "LLAMA_LIBS: ${LLAMA_LIBS}"
-    OUTPUT ${TOKENIZER_LIBS}
-    COMMAND ${CMAKE_COMMAND} -E copy ${TOKENIZER_LIB} ${TOKENIZER_LIBS}
-    COMMAND ${CMAKE_AR} -x ${LLAMA_LIBS}
-    COMMAND ${CMAKE_AR} -q ${TOKENIZER_LIBS} *.o*
-    COMMAND ${CMAKE_COMMAND} -E remove *.o*
-    DEPENDS tokenizer ${LLAMA_LIBS}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}  # 必须工作在能写文件的地方
-    COMMENT "Merging libllama_vocab.a libtokenizer.a into one static library"
+# ---- Build meta-pytorch/tokenizers ----
+add_subdirectory(
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tokenizers
+    ${CMAKE_CURRENT_BINARY_DIR}/hf-build
 )
 
-# 添加合并目标
-add_custom_target(tokenizer_static_libs ALL DEPENDS ${TOKENIZER_LIBS})
+# ---- RKNN3 tokenizer main library (single .cpp) ----
+add_library(tokenizer STATIC src/Tokenizer.cpp)
 
-# 安装时替换成合并后的版本
-install(FILES ${TOKENIZER_LIBS} DESTINATION lib RENAME libtokenizer.a)
+target_include_directories(tokenizer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/tokenizers/include
+)
+
+target_link_libraries(tokenizer tokenizers)
+
+# protobuf-lite (sentencepiece dep) uses __android_log_write for its log
+# handler on Android; that symbol lives in liblog.  Plain signature to match
+# the call above (CMake forbids mixing plain and keyword signatures on the
+# same target).
+if(ANDROID)
+  target_link_libraries(tokenizer log)
+endif()
+
+# ---- Merge all .a into single libtokenizer_merged.a ----
+add_custom_command(
+    TARGET tokenizer POST_BUILD
+    COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/merge_libs.sh
+            ${CMAKE_CURRENT_BINARY_DIR}
+            ${CMAKE_CURRENT_BINARY_DIR}/hf-build
+            ${CMAKE_CURRENT_BINARY_DIR}/libtokenizer_merged.a
+    COMMENT "Merging all deps into libtokenizer_merged.a"
+)
+
+# ---- Demo ----
+add_subdirectory(demo)
+
+# ---- Install ----
+install(FILES  ${CMAKE_CURRENT_SOURCE_DIR}/include/Tokenizer.h
+               DESTINATION include)
+install(FILES  ${CMAKE_CURRENT_BINARY_DIR}/libtokenizer_merged.a
+               DESTINATION lib RENAME libtokenizer.a)
+install(TARGETS tokenize_demo
+        RUNTIME DESTINATION demo)

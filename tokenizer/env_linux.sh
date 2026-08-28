@@ -1,5 +1,5 @@
 # aarch64
-RK_AARCH64_TOOLCHAIN=~/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin/
+RK_AARCH64_TOOLCHAIN=/opt/toolchains/gcc-linaro-7.4.1-2019.02-x86_64_aarch64-linux-gnu/bin/
 export C_COMPILER_AARCH64=${RK_AARCH64_TOOLCHAIN}/aarch64-linux-gnu-gcc
 export CXX_COMPILER_AARCH64=${RK_AARCH64_TOOLCHAIN}/aarch64-linux-gnu-g++
 

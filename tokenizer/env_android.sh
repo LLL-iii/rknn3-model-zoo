@@ -1,1 +1,1 @@
-export ANDROID_NDK_PATH=/opt/tools/android-ndk-r23c
+export ANDROID_NDK_PATH=/opt/toolchains/android-ndk-r23c

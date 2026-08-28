@@ -129,7 +129,7 @@ if __name__ == '__main__':
     if args.modelscope:
         from modelscope import snapshot_download
         qwen3_model_path = snapshot_download(qwen3_model_path)
-    export_tokenizer(qwen3_model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer.gguf')
+    export_tokenizer(qwen3_model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer', use_modelscope=args.modelscope)
 
     # Export embedding weight
     export_embed_weight(qwen3_asr_model.model.thinker.model.embed_tokens.weight, os.path.splitext(args.export_llm_path)[0] + '.embed.bin')

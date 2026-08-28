@@ -23,9 +23,12 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <string>
+
 #include "rknn_qwen2_5_llm.h"
 #include "image_utils.h"
 #include "time_utils.h"
+#include "ChatTemplate.h"
 
 int64_t first_token;
 bool first_decode = true;
@@ -50,6 +53,24 @@ const rknn3_sampling_params SAMPLE_PARAMS = {
 const char* system_prompt  = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n";
 const char* prompt_prefix  = "<|im_start|>user\n";
 const char* prompt_postfix = "<|im_end|>\n<|im_start|>assistant\n";
+
+// JSON 字符串转义：构造 messages 上下文时避免引号/换行破坏 JSON
+static std::string json_escape(const std::string& s)
+{
+    std::string o;
+    for (size_t i = 0; i < s.size(); ++i) {
+        char c = s[i];
+        switch (c) {
+            case '"':  o += "\\\""; break;
+            case '\\': o += "\\\\"; break;
+            case '\n': o += "\\n";  break;
+            case '\r': o += "\\r";  break;
+            case '\t': o += "\\t";  break;
+            default:   o += c;      break;
+        }
+    }
+    return o;
+}
 
 /*-------------------------------------------
                 Callback Function
@@ -173,7 +194,8 @@ int main(int argc, char **argv)
 {
     if (argc != 7)
     {
-        printf("%s <model_path> <weight_path> <tokenizer_path> <embedding_path> <core_mask> <prompt>\n", argv[0]);
+        printf("%s <model_path> <weight_path> <tokenizer_dir> <embedding_path> <core_mask> <prompt>\n", argv[0]);
+        printf("  tokenizer_dir: HF 模型目录（含 tokenizer.json / tokenizer_config.json / chat_template.jinja）\n");
         return -1;
     }
 
@@ -214,11 +236,22 @@ int main(int argc, char **argv)
     RKLLMCallback callback;
     memset(&callback, 0, sizeof(RKLLMCallback));
 
-    // Load Toenizer
-    tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
-    if (!tokenizer)
+    // Chat template 与渲染缓冲：提前声明，避免后续 goto out 跨过非平凡初始化
+    ChatTemplate chat_template(tokenizer_path);
+    std::string ctx_json;
+    std::string full_prompt;
+
+    // Load Toenizer（新版：从 HF 模型目录加载 tokenizer.json / tokenizer.model）
+    tokenizer = new Tokenizer(tokenizer_path);
+    if (!tokenizer || !tokenizer->IsLoaded())
     {
-        printf("load tokenizer failed! tokenizer_path=%s\n", tokenizer_path);
+        printf("load tokenizer failed! tokenizer_dir=%s\n", tokenizer_path);
+        goto out;
+    }
+
+    if (!chat_template.IsLoaded())
+    {
+        printf("load chat template failed! tokenizer_dir=%s\n", tokenizer_path);
         goto out;
     }
     
@@ -282,9 +315,19 @@ int main(int argc, char **argv)
         goto out;
     }
 
+    // 渲染对话消息为完整 prompt（与 Python apply_chat_template 逐字节一致）
+    ctx_json = "{\"messages\":[{\"role\":\"user\",\"content\":\"" +
+               json_escape(prompt) + "\"}],\"add_generation_prompt\":true}";
+    full_prompt.clear();
+    if (!chat_template.Render(ctx_json, &full_prompt))
+    {
+        printf("render chat template failed!\n");
+        goto out;
+    }
+
     // LLM Input
     tensor.name     = "input_embeds";
-    tensor.prompt   = prompt;
+    tensor.prompt   = full_prompt.c_str();
     tensor.embed    = NULL;
     tensor.tokens   = NULL;
     tensor.n_tokens = 0;

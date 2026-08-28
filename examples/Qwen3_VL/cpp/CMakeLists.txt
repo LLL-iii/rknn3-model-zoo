@@ -52,7 +52,7 @@ target_link_libraries(${PROJECT_NAME}
 	imageutils
     fileutils
     ${LIBRKNNAPI}
-    ${LIBTOKENIZER}
+    -Wl,--whole-archive ${LIBTOKENIZER} -Wl,--no-whole-archive
     ${SPEEDUP_LIB}
     dl
 )
@@ -80,13 +80,13 @@ install(TARGETS ${PROJECT_NAME} DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../data/demo.jpg DESTINATION ./model)
 file(GLOB LLM_RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../python/llm/*.rknn")
 file(GLOB LLM_WEIGHT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../python/llm/*.weight")
-file(GLOB LLM_TOKENIZER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../python/llm/*.tokenizer.gguf")
+file(GLOB LLM_TOKENIZER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../python/llm/*.tokenizer/")
 file(GLOB LLM_EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../python/llm/*.embed.bin")
 file(GLOB VISION_RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../python/vision/*.rknn")
 file(GLOB VISION_WEIGHT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../python/vision/*.weight")
 install(FILES ${LLM_RKNN_FILES} DESTINATION ./model)
 install(FILES ${LLM_WEIGHT_FILES} DESTINATION ./model)
-install(FILES ${LLM_TOKENIZER_FILES} DESTINATION ./model)
+install(DIRECTORY ${LLM_TOKENIZER_DIRS} DESTINATION ./model)
 install(FILES ${LLM_EMBED_FILES} DESTINATION ./model)
 install(FILES ${VISION_RKNN_FILES} DESTINATION ./model)
 install(FILES ${VISION_WEIGHT_FILES} DESTINATION ./model)

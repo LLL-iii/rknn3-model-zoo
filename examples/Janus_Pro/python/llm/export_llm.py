@@ -80,7 +80,7 @@ if __name__ == '__main__':
     export_janus_pro_llm_config(ori_model_name, args.model_path, os.path.splitext(args.export_llm_path)[0] + '.config.pkl', conversation, prompt)
 
     # Export tokenizer
-    export_tokenizer(ori_model_name, os.path.splitext(args.export_llm_path)[0] + '.tokenizer.gguf')  # LlamaTokenizer
+    export_tokenizer(ori_model_name, os.path.splitext(args.export_llm_path)[0] + '.tokenizer', use_modelscope=args.modelscope)  # LlamaTokenizer
 
     # Export embedding weight
     export_embed_weight(model.model.embed_tokens.weight, os.path.splitext(args.export_llm_path)[0] + '.embed.bin')

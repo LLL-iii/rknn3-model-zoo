@@ -51,7 +51,7 @@ target_link_libraries(${PROJECT_NAME}
     audioutils
     fileutils
     ${LIBRKNNAPI}
-    ${LIBTOKENIZER}
+    -Wl,--whole-archive ${LIBTOKENIZER} -Wl,--no-whole-archive
     dl
 )
 
@@ -77,10 +77,10 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 install(TARGETS ${PROJECT_NAME} DESTINATION .)
 file(GLOB RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.rknn")
 file(GLOB WEIGHT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.weight")
-file(GLOB TOKENIZER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer.gguf")
+file(GLOB TOKENIZER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer/")
 file(GLOB EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.embed.bin")
 file(GLOB EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.safetensors")
 install(FILES ${RKNN_FILES} DESTINATION ./model)
 install(FILES ${WEIGHT_FILES} DESTINATION ./model)
-install(FILES ${TOKENIZER_FILES} DESTINATION ./model)
+install(DIRECTORY ${TOKENIZER_DIRS} DESTINATION ./model)
 install(FILES ${EMBED_FILES} DESTINATION ./model)

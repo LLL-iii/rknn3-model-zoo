@@ -76,6 +76,11 @@ if [ "${TARGET_SYSTEM}" == "cygwin" ]; then
     source env_cygwin.sh
 fi
 
+# Android 默认编译 64 位（RK3576 为 arm64）；不传 -a 时 NDK 会回落到 armeabi-v7a
+if [ "${TARGET_SYSTEM}" == "android" ] && [ -z "${TARGET_ARCH}" ]; then
+    TARGET_ARCH=arm64-v8a
+fi
+
 TARGET_PLATFORM=${TARGET_SYSTEM}
 if [[ -n ${TARGET_ARCH} ]];then
   TARGET_PLATFORM=${TARGET_PLATFORM}_${TARGET_ARCH}
@@ -109,6 +114,19 @@ echo "CXX_COMPILER=${CXX_COMPILER}"
 echo "INSTALL_DIR=${INSTALL_DIR}"
 echo "BUILD_DIR=${BUILD_DIR}"
 echo "==================================="
+
+# NDK clang's -dumpversion is not a plain number ("12" vs GCC "7.4.1");
+# extract a leading integer and only enforce the check when we can parse it.
+CXX_VER=$(${CXX_COMPILER} -dumpversion 2>/dev/null | grep -oE '^[0-9]+' | head -1)
+if [ -n "${CXX_VER}" ] && [ "${CXX_VER}" -lt 4 ]; then
+    echo "============================================"
+    echo "ERROR: C++11 compiler required by tokenizer."
+    echo "Current compiler: ${CXX_COMPILER} (GCC ${CXX_VER})"
+    echo "Required: GCC 4.8+ or Clang 3.4+ (C++11)"
+    echo "============================================"
+    exit 1
+fi
+echo "[OK] C++11 supported (${CXX_COMPILER})"
 
 if [[ ! -d "${BUILD_DIR}" ]]; then
   mkdir -p ${BUILD_DIR}
@@ -172,5 +190,27 @@ fi
 
 make -j16
 make install
+
+# Clean up third-party headers and libraries that `make install` pulls
+# in from sentencepiece / json / PCRE2 sub-projects.
+# We only need Tokenizer.h + libtokenizer.a + tokenize_demo.
+rm -rf "${INSTALL_DIR}/include/pytorch" \
+       "${INSTALL_DIR}/include/nlohmann" \
+       "${INSTALL_DIR}/include/sentencepiece" \
+       "${INSTALL_DIR}/include/pcre2.h" \
+       "${INSTALL_DIR}/include/pcre2posix.h" \
+       "${INSTALL_DIR}/include/unicode-data.h" \
+       "${INSTALL_DIR}/include/unicode.h" \
+       "${INSTALL_DIR}/lib/cmake" \
+       "${INSTALL_DIR}/lib/pkgconfig" \
+       "${INSTALL_DIR}/lib/"libpcre2* \
+       "${INSTALL_DIR}/share" \
+       "${INSTALL_DIR}/bin" \
+       2>/dev/null || true
+# Keep only libtokenizer.a
+find "${INSTALL_DIR}/lib" -name '*.a' ! -name 'libtokenizer.a' -delete 2>/dev/null || true
+strip -s "${INSTALL_DIR}/demo/tokenize_demo" 2>/dev/null || true
+echo "[install] → ${INSTALL_DIR}"
+
 cd -
 

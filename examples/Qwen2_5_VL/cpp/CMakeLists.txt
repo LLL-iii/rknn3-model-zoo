@@ -52,7 +52,7 @@ target_link_libraries(${PROJECT_NAME}
 	imageutils
     fileutils
     ${LIBRKNNAPI}
-    ${LIBTOKENIZER}
+    -Wl,--whole-archive ${LIBTOKENIZER} -Wl,--no-whole-archive
     ${SPEEDUP_LIB}
     dl
 )
@@ -80,9 +80,9 @@ install(TARGETS ${PROJECT_NAME} DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../data/vision/demo.jpg DESTINATION ./model)
 file(GLOB RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*/*.rknn")
 file(GLOB WEIGHT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*/*.weight")
-file(GLOB TOKENIZER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer.gguf")
+file(GLOB TOKENIZER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer/")
 file(GLOB EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.embed.bin")
 install(FILES ${RKNN_FILES} DESTINATION ./model)
 install(FILES ${WEIGHT_FILES} DESTINATION ./model)
-install(FILES ${TOKENIZER_FILES} DESTINATION ./model)
+install(DIRECTORY ${TOKENIZER_DIRS} DESTINATION ./model)
 install(FILES ${EMBED_FILES} DESTINATION ./model)

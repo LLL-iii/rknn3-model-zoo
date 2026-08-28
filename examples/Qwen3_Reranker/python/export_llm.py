@@ -98,7 +98,7 @@ if __name__ == '__main__':
     export_llm_config(args.model_path, os.path.splitext(args.export_llm_path)[0] + '.config.pkl', None, None, user_config)
 
     # Export tokenizer
-    export_tokenizer(args.model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer.gguf')
+    export_tokenizer(args.model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer', use_modelscope=args.modelscope)
 
     # Export Reranker weight
     export_embed_weight(model.model.get_input_embeddings().weight, os.path.splitext(args.export_llm_path)[0] + '.embed.bin')

@@ -235,8 +235,8 @@ int main(int argc, char **argv)
     prompt_new += prompt;
 
     // Load Tokenizer
-    tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
-    if (!tokenizer)
+    tokenizer = new Tokenizer(tokenizer_path);
+    if (!tokenizer || !tokenizer->IsLoaded())
     {
         printf("load tokenizer failed! tokenizer_path=%s\n", tokenizer_path);
         goto out;

@@ -1,1 +1,0 @@
-export ANDROID_NDK_PATH=/home/zmd/work/Tools/android-ndk-r23c

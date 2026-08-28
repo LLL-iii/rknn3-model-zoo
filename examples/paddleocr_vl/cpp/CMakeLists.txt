@@ -54,7 +54,7 @@ target_link_libraries(paddle_vl
 	  imageutils
     fileutils
     ${LIBRKNNAPI}
-    ${LIBTOKENIZER}
+    -Wl,--whole-archive ${LIBTOKENIZER} -Wl,--no-whole-archive
     dl
 )
 target_include_directories(paddle_vl PRIVATE
@@ -68,7 +68,7 @@ target_link_libraries(${PROJECT_NAME}
 	imageutils
     fileutils
     ${LIBRKNNAPI}
-    ${LIBTOKENIZER}
+    -Wl,--whole-archive ${LIBTOKENIZER} -Wl,--no-whole-archive
     dl
 )
 
@@ -94,11 +94,11 @@ install(TARGETS ${PROJECT_NAME} DESTINATION .)
 install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/../data/vision/test.png DESTINATION ./model)
 file(GLOB RKNN_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*/*.rknn")
 file(GLOB WEIGHT_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/*/*.weight")
-file(GLOB TOKENIZER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer.gguf")
+file(GLOB TOKENIZER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer/")
 file(GLOB EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.embed.bin")
 file(GLOB POSITION_EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/vision/position_embedding_model.bin")
 install(FILES ${RKNN_FILES} DESTINATION ./model)
 install(FILES ${WEIGHT_FILES} DESTINATION ./model)
-install(FILES ${TOKENIZER_FILES} DESTINATION ./model)
+install(DIRECTORY ${TOKENIZER_DIRS} DESTINATION ./model)
 install(FILES ${EMBED_FILES} DESTINATION ./model)
 install(FILES ${POSITION_EMBED_FILES} DESTINATION ./model)

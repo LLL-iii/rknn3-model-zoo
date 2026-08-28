@@ -612,8 +612,8 @@ int main(int argc, char** argv)
   rknn3_llm_multimodal_tensor tensor;
   memset(&tensor, 0, sizeof(rknn3_llm_multimodal_tensor));
 
-  tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
-  if (!tokenizer) {
+  tokenizer = new Tokenizer(tokenizer_path);
+  if (!tokenizer || !tokenizer->IsLoaded()) {
     printf("load tokenizer failed! tokenizer_path=%s\n", tokenizer_path);
     ret = -1;
     goto out;

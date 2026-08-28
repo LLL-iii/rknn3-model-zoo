@@ -168,8 +168,8 @@ int init_model(const char *vision_model_path, const char *vision_weight_path, co
     memset(&callback, 0, sizeof(RKLLMCallback));
 
     // Load Tokenizer
-    tokenizer = new Tokenizer(TOKENIZER_BACKEND_LLAMA, tokenizer_path);
-    if (!tokenizer)
+    tokenizer = new Tokenizer(tokenizer_path);
+    if (!tokenizer || !tokenizer->IsLoaded())
     {
         printf("load tokenizer failed! tokenizer_path=%s\n", tokenizer_path);
         release_model();

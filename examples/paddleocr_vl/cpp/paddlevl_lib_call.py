@@ -24,7 +24,7 @@ class RKNNApp(object):
         lib = _load_ocr_lib()
         llm_model_path = os.path.join(model_path, llm_model_name + ".rknn")
         llm_weight_path = os.path.join(model_path, llm_model_name + ".weight")
-        tokenizer_path = os.path.join(model_path, llm_model_name + ".tokenizer.gguf")
+        tokenizer_path = os.path.join(model_path, llm_model_name + ".tokenizer")
         embeding_path = os.path.join(model_path, llm_model_name + ".embed.bin")
         vision_model_path =  os.path.join(model_path, vision_model_name + ".rknn")
         vision_weight_path = os.path.join(model_path, vision_model_name + ".weight")

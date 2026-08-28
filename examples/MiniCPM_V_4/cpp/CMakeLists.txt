@@ -42,7 +42,7 @@ target_link_libraries(${PROJECT_NAME}
 	imageutils
     fileutils
     ${LIBRKNNAPI}
-    ${LIBTOKENIZER}
+    -Wl,--whole-archive ${LIBTOKENIZER} -Wl,--no-whole-archive
     dl
 )
 
@@ -74,9 +74,9 @@ foreach(rknn_file ${RKNN_FILES})
         list(APPEND WEIGHT_FILES ${weight_file})
     endif()
 endforeach()
-file(GLOB TOKENIZER_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer.gguf")
+file(GLOB TOKENIZER_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.tokenizer/")
 file(GLOB EMBED_FILES "${CMAKE_CURRENT_SOURCE_DIR}/../model/llm/*.embed.bin")
 install(FILES ${RKNN_FILES} DESTINATION ./model)
 install(FILES ${WEIGHT_FILES} DESTINATION ./model)
-install(FILES ${TOKENIZER_FILES} DESTINATION ./model)
+install(DIRECTORY ${TOKENIZER_DIRS} DESTINATION ./model)
 install(FILES ${EMBED_FILES} DESTINATION ./model)

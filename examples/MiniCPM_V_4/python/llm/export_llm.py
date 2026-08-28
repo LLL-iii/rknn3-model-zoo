@@ -75,7 +75,7 @@ if __name__ == '__main__':
 
     # Export tokenizer
     os.system("cp ../MiniCPM_V_4/tokenizer_config.json {}".format(ori_model_path))
-    export_tokenizer(ori_model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer.gguf')
+    export_tokenizer(ori_model_path, os.path.splitext(args.export_llm_path)[0] + '.tokenizer', use_modelscope=args.modelscope)
 
     # Export embedding weight
     export_embed_weight(model.llm.model.embed_tokens.weight, os.path.splitext(args.export_llm_path)[0] + '.embed.bin')
